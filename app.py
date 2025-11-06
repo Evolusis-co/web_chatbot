@@ -66,7 +66,7 @@ def initialize_services():
         logger.error(f"❌ Failed to initialize services: {str(e)}")
         return False
 
-def get_relevant_context(user_message: str, top_k: int = 3) -> str:
+def get_relevant_context(user_message: str, top_k: int = 2) -> str:
     """Retrieve relevant context from Qdrant"""
     try:
         # Generate embedding for user message using Google's API directly
@@ -77,7 +77,7 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
         )
         query_vector = result['embedding']
         
-        # Search in Qdrant
+        # Search in Qdrant - reduced to top 2 for speed
         search_results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
@@ -101,10 +101,14 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
 def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional") -> str:
     """Generate response using OpenAI with STEP + 4Rs framework"""
     try:
-        # Special handling for tone selection
+        # Special handling for tone selection - instant response, no AI needed
         if user_message.strip() in ["Professional", "Casual"]:
             selected_tone = user_message.strip()
             return f"Got it — I'll reply in a {selected_tone} tone. How can I help today?"
+        
+        # Quick replies for topics - instant response, no AI needed
+        if user_message.strip() in ["Work relationships", "Stress & deadlines", "Career growth", "Team conflicts"]:
+            return f"Let's talk about {user_message.lower()}. What's going on?"
         
         # Define tone-specific instructions
         if tone == "Casual":
@@ -221,7 +225,8 @@ ANSWER:
                 {"role": "user", "content": user_message}
             ],
             temperature=0.7,
-            max_tokens=300
+            max_tokens=150,  # Reduced from 300 - shorter responses are faster
+            stream=False  # Explicit non-streaming for consistency
         )
         
         return response.choices[0].message.content.strip()
@@ -254,24 +259,35 @@ def chat():
         
         logger.info(f"📨 User: {user_message}")
         
-        # Check if services are initialized
-        if not qdrant_client or not embeddings or not openai_client:
-            logger.error("Services not initialized, attempting to reinitialize...")
-            if not initialize_services():
-                return jsonify({'error': 'Services unavailable. Please try again later.'}), 503
-        
-        # Get relevant context from Qdrant
-        context = get_relevant_context(user_message)
-        
-        # Get chat history for context
-        history = session.get('chat_history', [])
-        chat_history = "\n".join([f"User: {h['user']}\nAI: {h['ai']}" for h in history[-3:]])  # Last 3 exchanges
-        
-        # Get selected tone (default to Professional)
-        selected_tone = session.get('tone', 'Professional')
-        
-        # Generate response using OpenAI with the selected tone
-        ai_response = generate_response(user_message, context, chat_history, selected_tone)
+        # Quick responses for button clicks (no AI needed - instant!)
+        if user_message in ["Professional", "Casual", "Work relationships", "Stress & deadlines", "Career growth", "Team conflicts"]:
+            # Get selected tone for context
+            selected_tone = session.get('tone', 'Professional')
+            
+            # Generate instant response without AI
+            ai_response = generate_response(user_message, "", "", selected_tone)
+        else:
+            # Check if services are initialized
+            if not qdrant_client or not embeddings or not openai_client:
+                logger.error("Services not initialized, attempting to reinitialize...")
+                if not initialize_services():
+                    return jsonify({'error': 'Services unavailable. Please try again later.'}), 503
+            
+            # Only retrieve context for actual questions (skip for greetings)
+            if len(user_message.split()) > 3:  # Only search Qdrant for longer messages
+                context = get_relevant_context(user_message)
+            else:
+                context = ""  # Skip context for short messages like "hi", "hello"
+            
+            # Get chat history for context
+            history = session.get('chat_history', [])
+            chat_history = "\n".join([f"User: {h['user']}\nAI: {h['ai']}" for h in history[-2:]])  # Reduced from 3 to 2
+            
+            # Get selected tone (default to Professional)
+            selected_tone = session.get('tone', 'Professional')
+            
+            # Generate response using OpenAI with the selected tone
+            ai_response = generate_response(user_message, context, chat_history, selected_tone)
         
         # Store in session history
         if 'chat_history' not in session:
