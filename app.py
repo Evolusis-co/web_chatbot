@@ -7,7 +7,7 @@ from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai
 from openai import OpenAI
 import logging
 from datetime import datetime
@@ -52,11 +52,9 @@ def initialize_services():
             api_key=QDRANT_API_KEY
         )
         
-        # Initialize Google embeddings (768 dimensions to match your collection)
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
-            google_api_key=GOOGLE_API_KEY
-        )
+        # Initialize Google Generative AI for embeddings
+        genai.configure(api_key=GOOGLE_API_KEY)
+        embeddings = "models/embedding-001"  # Store model name, not object
         
         # Initialize OpenAI client
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -71,8 +69,13 @@ def initialize_services():
 def get_relevant_context(user_message: str, top_k: int = 3) -> str:
     """Retrieve relevant context from Qdrant"""
     try:
-        # Generate embedding for user message
-        query_vector = embeddings.embed_query(user_message)
+        # Generate embedding for user message using Google's API directly
+        result = genai.embed_content(
+            model=embeddings,
+            content=user_message,
+            task_type="retrieval_query"
+        )
+        query_vector = result['embedding']
         
         # Search in Qdrant
         search_results = qdrant_client.search(
