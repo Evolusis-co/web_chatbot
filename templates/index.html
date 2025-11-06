@@ -7,20 +7,18 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="chat-wrapper">
-        <div class="chat-header">
-            <div class="header-left">
-                <h1>💼 Workplace Coach</h1>
-                <span class="status-dot"></span>
-            </div>
-            <button class="clear-btn" onclick="clearChat()" title="Clear chat">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                </svg>
-            </button>
-        </div>
+    <div class="container">
+        <header>
+            <h1>💼 Gen Z Workplace Coach</h1>
+            <p class="subtitle">Your friendly AI coach for workplace challenges</p>
+        </header>
 
         <div class="chat-container" id="chatContainer">
+            <div class="welcome-message">
+                <div class="welcome-icon">👋</div>
+                <h2>Hey there! How can I help you today?</h2>
+                <p>I'm here to help you navigate workplace challenges. Share what's on your mind, and let's work through it together!</p>
+            </div>
             <div id="messages"></div>
         </div>
 
@@ -28,15 +26,21 @@
             <div class="input-wrapper">
                 <textarea 
                     id="userInput" 
-                    placeholder="Message Workplace Coach..." 
+                    placeholder="Type your message here..." 
                     rows="1"
                     maxlength="1000"
                 ></textarea>
-                <button id="sendBtn" onclick="sendMessage()" title="Send message">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                <button id="sendBtn" onclick="sendMessage()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
                     </svg>
                 </button>
+            </div>
+            <div class="actions">
+                <button class="action-btn" onclick="clearChat()">
+                    🗑️ Clear Chat
+                </button>
+                <span class="char-count" id="charCount">0/1000</span>
             </div>
         </div>
     </div>

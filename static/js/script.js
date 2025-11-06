@@ -97,7 +97,7 @@ async function sendMessage() {
     } catch (error) {
         console.error('Error:', error);
         // Remove thinking indicator on error
-        const thinking = document.querySelector('.ai-message.thinking-message');
+        const thinking = document.querySelector('.message.ai.thinking-message');
         if (thinking) thinking.remove();
         addMessage('Sorry, I couldn\'t connect to the server. Please try again.', 'ai');
     } finally {
@@ -111,7 +111,7 @@ async function sendMessage() {
 // Add thinking indicator (ChatGPT style)
 function addThinkingIndicator() {
     const messageDiv = document.createElement('div');
-    messageDiv.className = 'message ai-message thinking-message';
+    messageDiv.className = 'message ai thinking-message';
     
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
@@ -150,7 +150,7 @@ function addPremiumMessage(text) {
 // Add message to chat
 function addMessage(text, type, quickReplies = null) {
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}-message`;
+    messageDiv.className = `message ${type}`;
     
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
