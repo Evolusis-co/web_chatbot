@@ -110,6 +110,23 @@ def generate_response(user_message: str, context: str, chat_history: str = "", t
         if user_message.strip() in ["Work relationships", "Stress & deadlines", "Career growth", "Team conflicts"]:
             return f"Let's talk about {user_message.lower()}. What's going on?"
         
+        # SAFETY CHECK: Detect harmful/dangerous content
+        harmful_keywords = ['kill', 'killed', 'murder', 'suicide', 'abuse', 'violence', 'assault', 'harass', 'threat', 'weapon', 'gun', 'knife', 'blood', 'attack', 'stab']
+        message_lower = user_message.lower()
+        
+        if any(keyword in message_lower for keyword in harmful_keywords):
+            return ("⚠️ I'm concerned about what you've shared. If you're in immediate danger or witnessing illegal activity, please contact:\n\n"
+                   "• Emergency Services: 911\n"
+                   "• National Suicide Prevention Lifeline: 988\n"
+                   "• Workplace Violence Hotline: 1-800-799-7233\n\n"
+                   "I'm designed to help with workplace communication challenges, not crisis or safety situations. Please reach out to professionals who can provide proper support.")
+        
+        # OFF-TOPIC CHECK: Detect personal health/medical issues
+        health_keywords = ['headache', 'sick', 'pain', 'fever', 'medication', 'doctor', 'hospital', 'injury', 'hurt']
+        
+        if any(keyword in message_lower for keyword in health_keywords):
+            return ("I'm specifically designed for workplace communication challenges. For health concerns, please consult a medical professional. Can we focus on a work-related communication or teamwork challenge instead?")
+        
         # Define tone-specific instructions
         if tone == "Casual":
             tone_instruction = """• Use a CASUAL, Gen Z tone: relaxed, conversational, like texting a smart friend
@@ -146,8 +163,19 @@ You are a Gen Z workplace coach chatbot. Your role is to guide young professiona
 • Always emphasize what is within their personal control.
 • Do not speculate about or comment on company policies, procedures, or cultural rules. If the user brings these up, steer back to what they can do in their role.
 • Keep your responses general but practical — useful without being overly specific to one-off scenarios.
-• Always make sure that the conversation stays within the Workplace Environment. If user goes Off-topic steer back the conversation on Track and if user doesn't agree make sure you just politely decline and say I'm not capable of providing solutions out of Workplace Environment.
-• Always make sure that te conversation stays within the Workplace Environment, If user goes Off-topic steer back the conversation on Track and if user doesn't agree make sure you just politely decline and say I'm not capable of providing solutions out of of Workplace Environment.
+
+🚨 CRITICAL SAFETY BOUNDARIES:
+• This is a WORKPLACE COACHING bot ONLY. You cannot help with:
+  - Personal health issues (headaches, illness, medical advice)
+  - Mental health crises (depression, anxiety disorders, trauma)
+  - Illegal activities (violence, harassment, assault, threats)
+  - Personal relationships outside work (family, romantic, friends)
+  - Financial, legal, or housing problems
+  
+• If user mentions ANY of the above, respond:
+  "I'm specifically designed for workplace communication challenges. For [health/legal/personal] issues, please consult appropriate professionals. Can we focus on a work-related communication or teamwork challenge instead?"
+  
+• NEVER engage with dangerous content casually. If violence/illegal activity is mentioned, immediately direct to authorities.
 
 ⸻
 
