@@ -93,9 +93,32 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
 def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional", chat_length: int = 0) -> str:
     """Generate response using GPT-4o-mini with STEP + 4Rs framework and Qdrant context"""
     try:
-        # Safety check - Physical violence/abuse (CRITICAL)
-        violence_keywords = ['beat', 'beats', 'hit', 'hits', 'punch', 'slap', 'kick', 'physical', 'hurt', 'injury', 'violence', 'assault', 'attack']
-        if any(keyword in user_message.lower() for keyword in violence_keywords):
+        # Safety check - Physical violence/abuse (CRITICAL) - Only if it's clearly physical violence
+        # Improved: Check for context to avoid false positives (e.g., "beat me in workload")
+        violence_keywords = ['hit', 'punch', 'slap', 'kick', 'physical violence', 'physically hurt', 'assault', 'attack', 'threatened with violence']
+        workload_context = ['workload', 'work load', 'tasks', 'deadline', 'pressure', 'stress', 'overwhelm']
+        
+        # Only trigger violence warning if violence keywords found AND no workload context
+        has_violence_keyword = any(keyword in user_message.lower() for keyword in violence_keywords)
+        has_workload_context = any(keyword in user_message.lower() for keyword in workload_context)
+        
+        # Special check for "beat" - only warn if it's clearly physical, not metaphorical
+        if 'beat' in user_message.lower() and not has_workload_context:
+            # Check if it's physical violence context
+            physical_indicators = ['physically', 'hit me', 'hurt me', 'threatened', 'violence']
+            if any(indicator in user_message.lower() for indicator in physical_indicators):
+                return """⚠️ **This is serious.** Physical violence at work is illegal and unacceptable.
+
+Please take action immediately:
+• Document everything (dates, witnesses, injuries)
+• Report to HR or higher management NOW
+• Contact workplace violence hotline: 1-800-799-7233
+• If you're in immediate danger, call 911
+
+This isn't a communication issue — it's workplace abuse. I can't coach you through this, but I strongly urge you to protect yourself and report this."""
+        
+        # Regular violence keywords (excluding 'beat' which is handled above)
+        if has_violence_keyword and not has_workload_context:
             return """⚠️ **This is serious.** Physical violence at work is illegal and unacceptable.
 
 Please take action immediately:
@@ -158,36 +181,41 @@ I'm designed to help with workplace communication challenges, not crisis or safe
 
 🎯 CRITICAL RULES:
 
-1. **BE DIRECT & ACTIONABLE** - Stop asking endless questions. After 1-2 clarifying questions, jump straight to practical advice using STEP or 4Rs.
+1. **BE DIRECT & ACTIONABLE** - After 1 clarifying question, jump straight to practical advice using STEP or 4Rs.
 
-2. **USE THE DATASET CONTEXT** - You have access to real workplace scenarios. Reference them to give specific, relevant advice.
+2. **FORMAT YOUR RESPONSES PROPERLY**:
+   - Use bullet points (•) for lists
+   - Use numbered lists (1., 2., 3.) when explaining steps in order
+   - Add line breaks between sections for readability
+   - Keep each bullet point concise (1-2 lines max)
 
 3. **MATCH THE TONE**:
 {tone_instruction}
 
-4. **KEEP IT SHORT** - Maximum 3-4 sentences. No fluff, no over-validation. Get to the point.
+4. **AVOID QUESTION LOOPS** - Don't ask endless questions. Give actionable advice quickly.
 
-5. **AVOID QUESTION LOOPS** - Don't ask questions in every single response. Mix it up:
-   - First response: Quick empathy + 1 clarifying question
-   - Second response: Start giving actionable framework-based advice
-   - Third response onwards: Continue with practical steps
-
-6. **BE SMART ABOUT CONTEXT** - Use the chat history. Don't ask what they already told you.
+5. **USE THE DATASET CONTEXT** - Reference the workplace scenarios to give specific advice.
 
 ⸻
 
-**RESPONSE FORMULA:**
-- Message 1-2: Brief empathy + understand the core issue (max 1 question)
-- Message 3+: Apply STEP or 4Rs framework with specific, actionable steps
+**RESPONSE FORMAT EXAMPLES:**
 
-**EXAMPLE (Casual Tone):**
-User: "My boss keeps micromanaging me"
-❌ BAD: "That sounds tough. Can you tell me more about how they micromanage you?"
-✅ GOOD: "Ugh that's frustrating. Sounds like you need to rebuild trust with them. Here's a quick approach - try the STEP method: 1) Spot what triggers the micromanaging (missed deadlines? unclear updates?) 2) Think about their perspective - maybe they're stressed too 3) Engage by over-communicating for a week (send daily updates before they ask) 4) See if they back off once they feel in the loop. Worth a shot?"
+✅ GOOD (Casual, Structured):
+"Ugh that's rough. Here's what you can try using the STEP method:
+
+1. **Spot** - Identify which tasks are actually urgent vs just feeling urgent
+2. **Think** - Your boss might not realize they're overloading you. They probably think you'll speak up if it's too much
+3. **Engage** - Schedule a quick 15-min chat: 'Hey, I want to make sure I'm prioritizing right. Can we review what's most urgent?'
+4. **Perform** - Track your progress and show you're handling it. If it doesn't improve, escalate
+
+Worth trying?"
+
+❌ BAD (No structure, wall of text):
+"That's tough. Try the STEP method: Spot what tasks are overwhelming you, Think about prioritizing them which ones are urgent, Engage by setting a meeting with your boss to discuss workload and ask for clarity on priorities, Perform by tracking your progress to show you've got it under control."
 
 ⸻
 
-**CONTEXT FROM DATASET (Use this to make your advice specific):**
+**CONTEXT FROM DATASET:**
 {context}
 
 **CHAT HISTORY:**
@@ -196,7 +224,7 @@ User: "My boss keeps micromanaging me"
 **USER'S MESSAGE:**
 {user_message}
 
-**YOUR RESPONSE (Be direct, actionable, and concise):**"""
+**YOUR RESPONSE (Use bullet points/numbered lists, be direct and actionable):**"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",  # Using GPT-4o-mini for smarter responses
@@ -284,11 +312,18 @@ def chat():
         logger.info(f"✅ AI: {ai_response[:100]}...")
         
         # Simplified quick reply flow - ONLY tone buttons after problem is shared
+        # DON'T show buttons if the response is a safety warning
+        is_safety_warning = ai_response.startswith("⚠️") or "call 911" in ai_response.lower()
+        
         quick_replies = []
         chat_length = len(session.get('chat_history', []))
         
+        if is_safety_warning:
+            # Never show buttons after safety warnings
+            quick_replies = []
+            logger.info("⚠️ Safety warning issued, no buttons shown")
         # Step 1: First message (greeting) - NO buttons yet, just greet
-        if chat_length == 1:
+        elif chat_length == 1:
             # Check if first message is just a greeting (hi, hello, hey, etc.)
             greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
             first_msg = user_message.lower().strip()
