@@ -145,9 +145,9 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         if any(keyword in user_message.lower() for keyword in health_keywords):
             return "I'm specifically designed for workplace communication challenges. For health concerns, please consult a medical professional. Can we focus on a work-related communication or teamwork challenge instead?"
         
-        # Special handling for message 3 - Ask about tone preference (ONLY if previous messages were normal)
+        # Special handling for message 3 - Ask about tone preference WITH CLEAR EXPLANATION
         if chat_length == 3:
-            return "Before we dive in — how would you like me to respond? Pick the style that feels right for you."
+            return "I can help you with this. Quick question — would you prefer my advice in a **casual, friendly tone** or a **professional, formal tone**? Either way works, just pick what feels comfortable for you."
         
         # Special handling for tone selection - Use chat history to continue the conversation
         if user_message.strip() in ["Professional", "Casual"]:
@@ -170,7 +170,7 @@ I'm designed to help with workplace communication challenges, not crisis or safe
                     pass  # Let it fall through to normal GPT response
             
             # If no context, just acknowledge
-            return f"Perfect! I'll keep it {selected_tone.lower()}. What's going on?"
+            return f"Perfect! I'll keep it {selected_tone.lower()}. What's the situation?"
         
         # Define tone-specific instructions
         if tone == "Casual":
@@ -198,33 +198,22 @@ Use these frameworks:
 
 ⸻
 
-🎯 CRITICAL FORMATTING RULE - BULLETS MUST BE ON SEPARATE LINES:
+🎯 CRITICAL FORMATTING INSTRUCTIONS:
 
-**NEVER use numbered lists (1. 2. 3. 4.)**
-**ALWAYS use bullet points (•) with LINE BREAKS between each point**
+Your response will be displayed in a web chat interface. Format it using HTML:
 
-Each bullet point MUST start on a NEW LINE. This is MANDATORY.
+1. Use <b>keyword</b> for bold text (e.g., <b>Spot</b>, <b>Think</b>)
+2. Use <br><br> for line breaks between bullet points
+3. Use • symbol for bullets
 
-✅ CORRECT FORMAT (Each bullet on separate line):
-"Ugh that sounds rough. Here's how to handle it with STEP:
+Example format:
+"Ugh that sounds rough. Here's how to handle it with STEP:<br><br>• <b>Spot</b> - Figure out which tasks are urgent<br><br>• <b>Think</b> - Your boss might not realize they're overloading you<br><br>• <b>Engage</b> - Ask for a quick 15-min priority check<br><br>• <b>Perform</b> - Track progress and escalate if needed<br><br>Sound good?"
 
-• **Spot** - Figure out which tasks are urgent vs just feeling urgent
-
-• **Think** - Your boss might not know they're overloading you
-
-• **Engage** - Ask for a quick 15-min priority check
-
-• **Perform** - Track progress and escalate if needed
-
-Sound good?"
-
-❌ WRONG (Bullets inline, no line breaks):
-"Here's STEP: • **Spot** - ... • **Think** - ... • **Engage** - ..."
-
-❌ WRONG (Using numbers):
-"1. **Spot** - ... 2. **Think** - ..."
-
-EACH BULLET (•) MUST BE ON ITS OWN LINE WITH A BLANK LINE AFTER IT.
+KEY RULES:
+- NEVER use **text** for bold, use <b>text</b> instead
+- NEVER use \\n for line breaks, use <br><br> instead
+- NEVER use numbered lists (1. 2. 3.), always use bullets (•)
+- Keep total response under 120 words
 
 ⸻
 
@@ -233,22 +222,10 @@ EACH BULLET (•) MUST BE ON ITS OWN LINE WITH A BLANK LINE AFTER IT.
 
 ⸻
 
-🎯 CONVERSATION RULES:
+🎯 CONVERSATION APPROACH:
 
-1. **When user selects tone (Professional/Casual)**: 
-   - Look at chat history to see their problem
-   - IMMEDIATELY address it in their selected tone
-   - Don't make them repeat themselves
-
-2. **Give actionable advice quickly**
-   - After 1 question, jump to STEP or 4Rs
-   - Use bullet points (•) with line breaks, never numbers
-
-3. **Keep it conversational**
-   - 3-5 bullet points max
-   - Each bullet = 1-2 sentences
-   - Add blank line after each bullet
-   - End with "Sound good?" or "Worth trying?"
+**First response to a problem:** Ask 1 clarifying question to understand better
+**Second response onwards:** Give actionable STEP or 4Rs advice with bullets
 
 ⸻
 
@@ -261,7 +238,7 @@ EACH BULLET (•) MUST BE ON ITS OWN LINE WITH A BLANK LINE AFTER IT.
 **USER JUST SAID:**
 {user_message}
 
-**YOUR RESPONSE (USE BULLETS • WITH LINE BREAKS, NOT INLINE):**"""
+**YOUR RESPONSE (Use <b> for bold, <br><br> between bullets):**"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",  # Using GPT-4o-mini for smarter responses
@@ -348,11 +325,11 @@ def chat():
         
         logger.info(f"✅ AI: {ai_response[:100]}...")
         
-        # Simplified quick reply flow - ONLY tone buttons after problem is shared
+        # Simplified quick reply flow
         # DON'T show buttons if the response is a safety warning
         is_safety_warning = ai_response.startswith("⚠️") or "call 911" in ai_response.lower()
         
-        # Check if user hasn't selected tone yet
+        # Check if user has selected tone
         has_selected_tone = 'tone' in session and session['tone'] in ["Professional", "Casual"]
         
         quick_replies = []
@@ -362,76 +339,25 @@ def chat():
             # Never show buttons after safety warnings
             quick_replies = []
             logger.info("⚠️ Safety warning issued, no buttons shown")
-        # If tone not selected yet and we have a real problem (not greeting), ask for tone
-        elif not has_selected_tone and chat_length >= 2:
-            # Check if current message is a real problem (not just greeting)
-            greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
-            if user_message.lower().strip() not in greeting_words:
-                # Check if previous response wasn't already asking for tone
-                if "Before we dive in" not in session['chat_history'][-1]['ai']:
-                    quick_replies = ["Professional", "Casual"]
-                    logger.info("🎯 No tone selected yet, showing tone buttons")
-        # Step 1: First message (greeting) - NO buttons yet, just greet
-        elif chat_length == 1:
-            # Check if first message is just a greeting (hi, hello, hey, etc.)
-            greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
-            first_msg = user_message.lower().strip()
-            if first_msg in greeting_words:
-                # Just greet, no tone buttons yet
-                quick_replies = []
-                logger.info("👋 Step 1: Greeting detected, no buttons shown")
-            else:
-                # User asked a real question first - will ask about tone next
-                quick_replies = []
-                logger.info("🎯 Step 1: Problem detected on first message")
         
-        # Step 2: User shared their problem - respond empathetically, NO buttons yet
-        elif chat_length == 2:
-            # Check if previous message was just greeting
-            prev_msg = session['chat_history'][0]['user'].lower().strip()
-            greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
-            
-            if prev_msg in greeting_words:
-                # They shared problem after greeting - respond empathetically, NO buttons yet
-                quick_replies = []
-                logger.info("🎯 Step 2: User shared problem after greeting, no buttons yet")
-            else:
-                # They selected tone on previous step - no more buttons, just chat
-                user_tone = session['chat_history'][1]['user'].strip()
-                if user_tone in ["Professional", "Casual"]:
-                    session['tone'] = user_tone
-                    session.modified = True
-                    quick_replies = []
-                    logger.info(f"🎯 Step 2: Tone '{user_tone}' selected, continuing conversation")
-        
-        # Step 3: After empathetic response - NOW ask how they want responses & show tone buttons
-        elif chat_length == 3:
-            # Check if first was greeting and second was problem
+        # Only show tone buttons at message 3 (after greeting + problem + bot's clarifying question)
+        elif chat_length == 3 and not has_selected_tone:
+            # Check if this is the normal flow: greeting → problem → clarifying question
             first_msg = session['chat_history'][0]['user'].lower().strip()
             greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
             
             if first_msg in greeting_words:
-                # Now ask about tone preference with buttons
-                quick_replies = ["Professional", "Casual"]
-                logger.info("🎯 Step 3: Asking tone preference, showing tone buttons")
-            else:
-                # Check if they just selected a tone
-                user_tone = session['chat_history'][2]['user'].strip()
-                if user_tone in ["Professional", "Casual"]:
-                    session['tone'] = user_tone
-                    session.modified = True
-                    quick_replies = []
-                    logger.info(f"🎯 Step 3: Tone '{user_tone}' selected, continuing conversation")
+                # Check if the bot's previous response was asking a question (not giving advice)
+                prev_ai_response = session['chat_history'][1]['ai']
+                if '?' in prev_ai_response:  # Bot asked a clarifying question
+                    quick_replies = ["Professional", "Casual"]
+                    logger.info("🎯 Message 3: Showing tone buttons after clarifying question")
         
-        # Step 4+: After tone is selected - NO MORE BUTTONS, just natural conversation
-        elif chat_length >= 4:
-            # Check if user just selected a tone
-            user_tone = session['chat_history'][-1]['user'].strip()
-            if user_tone in ["Professional", "Casual"]:
-                session['tone'] = user_tone
-                session.modified = True
-                logger.info(f"🎯 Step 4+: Tone '{user_tone}' selected")
-            quick_replies = []  # No more buttons - let the bot provide actionable advice
+        # Store tone if user just selected it
+        if user_message.strip() in ["Professional", "Casual"]:
+            session['tone'] = user_message.strip()
+            session.modified = True
+            logger.info(f"✅ Tone '{user_message.strip()}' saved to session")
         
         return jsonify({
             'response': ai_response,
