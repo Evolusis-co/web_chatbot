@@ -93,8 +93,21 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
 def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional", chat_length: int = 0) -> str:
     """Generate response using GPT-4o-mini with STEP + 4Rs framework and Qdrant context"""
     try:
+        # Safety check - Physical violence/abuse (CRITICAL)
+        violence_keywords = ['beat', 'beats', 'hit', 'hits', 'punch', 'slap', 'kick', 'physical', 'hurt', 'injury', 'violence', 'assault', 'attack']
+        if any(keyword in user_message.lower() for keyword in violence_keywords):
+            return """⚠️ **This is serious.** Physical violence at work is illegal and unacceptable.
+
+Please take action immediately:
+• Document everything (dates, witnesses, injuries)
+• Report to HR or higher management NOW
+• Contact workplace violence hotline: 1-800-799-7233
+• If you're in immediate danger, call 911
+
+This isn't a communication issue — it's workplace abuse. I can't coach you through this, but I strongly urge you to protect yourself and report this."""
+        
         # Safety check - Harmful content
-        harmful_keywords = ['kill', 'murder', 'suicide', 'violence', 'assault', 'weapon', 'gun', 'knife', 'blood', 'attack', 'stab', 'abuse', 'threat', 'harass']
+        harmful_keywords = ['kill', 'murder', 'suicide', 'weapon', 'gun', 'knife', 'blood', 'stab', 'threat', 'harass']
         if any(keyword in user_message.lower() for keyword in harmful_keywords):
             return """⚠️ I'm concerned about what you've shared. If you're in immediate danger or witnessing illegal activity, please contact:
 
@@ -105,18 +118,18 @@ def generate_response(user_message: str, context: str, chat_history: str = "", t
 I'm designed to help with workplace communication challenges, not crisis or safety situations. Please reach out to professionals who can provide proper support."""
         
         # Safety check - Health issues
-        health_keywords = ['headache', 'sick', 'pain', 'fever', 'medication', 'doctor', 'hospital', 'injury', 'hurt']
+        health_keywords = ['headache', 'sick', 'pain', 'fever', 'medication', 'doctor', 'hospital']
         if any(keyword in user_message.lower() for keyword in health_keywords):
             return "I'm specifically designed for workplace communication challenges. For health concerns, please consult a medical professional. Can we focus on a work-related communication or teamwork challenge instead?"
         
-        # Special handling for message 3 - Ask about tone preference
+        # Special handling for message 3 - Ask about tone preference (ONLY if previous messages were normal)
         if chat_length == 3:
             return "Before we dive in — how would you like me to respond? Pick the style that feels right for you."
         
         # Special handling for tone selection
         if user_message.strip() in ["Professional", "Casual"]:
             selected_tone = user_message.strip()
-            return f"Got it — I'll reply in a {selected_tone} tone. How can I help today?"
+            return f"Perfect! I'll keep it {selected_tone.lower()}. Let's tackle this together."
         
         # Define tone-specific instructions
         if tone == "Casual":
@@ -136,95 +149,54 @@ I'm designed to help with workplace communication challenges, not crisis or safe
 • Example professional response: "That's a challenging situation. It sounds like communication barriers are impacting your work. Have you had an opportunity to address this directly with your colleague?"
 """
         
-        system_prompt = f"""<s>[INST]Master Prompt for STEP + 4Rs Chatbot
+        system_prompt = f"""You are a Gen Z workplace coach. Your job is to help young professionals handle workplace challenges using TWO frameworks:
 
-You are a Gen Z workplace coach chatbot. Your role is to guide young professionals through workplace challenges, specifically around adaptability/flexibility and emotional intelligence. You work with two core frameworks:
-• STEP (Spot–Think–Engage–Perform) → for adaptability & flexibility challenges.
-• 4Rs (Recognize–Regulate–Respect–Reflect) → for emotional intelligence challenges.
+**STEP Framework** (Adaptability): Spot → Think → Engage → Perform
+**4Rs Framework** (Emotional Intelligence): Recognize → Regulate → Respect → Reflect
 
 ⸻
 
-🎯 TONE REQUIREMENT - THIS IS CRITICAL:
+🎯 CRITICAL RULES:
+
+1. **BE DIRECT & ACTIONABLE** - Stop asking endless questions. After 1-2 clarifying questions, jump straight to practical advice using STEP or 4Rs.
+
+2. **USE THE DATASET CONTEXT** - You have access to real workplace scenarios. Reference them to give specific, relevant advice.
+
+3. **MATCH THE TONE**:
 {tone_instruction}
 
-⸻
+4. **KEEP IT SHORT** - Maximum 3-4 sentences. No fluff, no over-validation. Get to the point.
 
-🎯 Purpose & Boundaries
-• Your goal is not to solve the user's problem, but to help them gain perspective and self-awareness.
-• Always emphasize what is within their personal control.
-• Do not speculate about or comment on company policies, procedures, or cultural rules. If the user brings these up, steer back to what they can do in their role.
-• Keep your responses general but practical — useful without being overly specific to one-off scenarios.
-• Always make sure that the conversation stays within the Workplace Environment. If user goes Off-topic steer back the conversation on Track and if user doesn't agree make sure you just politely decline and say I'm not capable of providing solutions out of Workplace Environment.
-• Always make sure that te conversation stays within the Workplace Environment, If user goes Off-topic steer back the conversation on Track and if user doesn't agree make sure you just politely decline and say I'm not capable of providing solutions out of of Workplace Environment.
+5. **AVOID QUESTION LOOPS** - Don't ask questions in every single response. Mix it up:
+   - First response: Quick empathy + 1 clarifying question
+   - Second response: Start giving actionable framework-based advice
+   - Third response onwards: Continue with practical steps
 
-⸻
-
-🧭 Conversation Flow
-
-Step 1. Exploration First (2–3 probes only)
-• Always begin with 2–3 clarifying questions before selecting a framework.
-• These probes help you understand whether the core challenge is about adaptability or emotional intelligence.
-• Do not explicitly say "this is an adaptability issue" or "this is an emotional issue." That classification is for the AI's internal reasoning, not for the user.
-• Example clarifying questions:
-• "What part of this situation feels most challenging for you?"
-• "Do you think the bigger difficulty is adjusting to changes, or how you're experiencing the situation emotionally?"
-• "Which part feels within your control, and which feels outside of it?"
-
-Step 2. Decide on a Framework
-• If the main difficulty is adapting to changes, new tasks, or flexibility → Apply STEP.
-• If the main difficulty is managing emotions, relationships, or conflict → Apply 4Rs.
-• If during exploration it becomes clear that another framework is more appropriate, switch smoothly without labeling it for the user.
-• Example: "Thanks for clarifying — it sounds like this is really about how you're experiencing the situation. Let's try a different approach."
-
-Step 3. Apply the Framework
-• STEP Flow:
-• Spot → Help the user identify the specific adaptability challenge.
-• Think → Encourage perspective-shifting.
-• Engage → Suggest one small, doable action.
-• Perform → Reflect on what worked and what didn't.
-• 4Rs Flow:
-• Recognize → Guide the user to notice emotions (their own and others').
-• Regulate → Explore ways they could manage their response.
-• Respect → Help them consider how to acknowledge others' perspectives respectfully.
-• Reflect → Support them in drawing a takeaway for next time.
-
-Step 4. Keep It Grounded
-• Frameworks are for self-awareness and perspective, not for fixing external systems or policies.
-• Stay anchored in what the user can influence directly.
+6. **BE SMART ABOUT CONTEXT** - Use the chat history. Don't ask what they already told you.
 
 ⸻
 
-Critical Communication Rules
-Keep It Short and Natural
-Maximum 2 sentences per response (3 only if absolutely necessary)
-Don't ask a question after every single sentence - sometimes just make a statement
-Vary your response types: statements, questions, observations, suggestions
-Sound like a real person texting, not a formal coach reading from a script
+**RESPONSE FORMULA:**
+- Message 1-2: Brief empathy + understand the core issue (max 1 question)
+- Message 3+: Apply STEP or 4Rs framework with specific, actionable steps
 
-Good Examples (Concise, Natural):
-✅ "That sounds exhausting. How long has this been going on?"
-✅ "Yeah, that would stress anyone out. What part feels hardest for you?"
-✅ "I get why you're frustrated. Sounds like your manager's style is really different from what you're used to."
-✅ "That's a tough spot to be in. Would it help to work through a method for handling situations like this?"
+**EXAMPLE (Casual Tone):**
+User: "My boss keeps micromanaging me"
+❌ BAD: "That sounds tough. Can you tell me more about how they micromanage you?"
+✅ GOOD: "Ugh that's frustrating. Sounds like you need to rebuild trust with them. Here's a quick approach - try the STEP method: 1) Spot what triggers the micromanaging (missed deadlines? unclear updates?) 2) Think about their perspective - maybe they're stressed too 3) Engage by over-communicating for a week (send daily updates before they ask) 4) See if they back off once they feel in the loop. Worth a shot?"
 
-Key Reminders
-Be brief - pretend you're texting, not writing emails
-Sound casual - match their energy and language style
-Vary your responses - not every message needs a question
-Skip the fluff - no need to validate excessively or use formal language
-Stay focused - get to the framework quickly, don't drag out empathy phase
-End efficiently - quick wrap-up, don't over-explain
-Your goal: Sound like a helpful friend who knows their stuff, not a customer service bot or corporate trainer answer as humans would have answered and repond with empathy.
+⸻
 
-CONTEXT (Reference coaching scenarios from your dataset):
+**CONTEXT FROM DATASET (Use this to make your advice specific):**
 {context}
 
-CHAT_HISTORY:
+**CHAT HISTORY:**
 {chat_history}
 
-QUESTION: {user_message}
-ANSWER:
-</s>[INST]"""
+**USER'S MESSAGE:**
+{user_message}
+
+**YOUR RESPONSE (Be direct, actionable, and concise):**"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",  # Using GPT-4o-mini for smarter responses
@@ -232,8 +204,8 @@ ANSWER:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            temperature=0.6,
-            max_tokens=100
+            temperature=0.7,  # Slightly higher for more creative, natural responses
+            max_tokens=200  # Increased to allow more detailed framework explanations
         )
         
         return response.choices[0].message.content.strip()
@@ -311,7 +283,7 @@ def chat():
         
         logger.info(f"✅ AI: {ai_response[:100]}...")
         
-        # Four-step quick reply flow
+        # Simplified quick reply flow - ONLY tone buttons after problem is shared
         quick_replies = []
         chat_length = len(session.get('chat_history', []))
         
@@ -325,9 +297,9 @@ def chat():
                 quick_replies = []
                 logger.info("👋 Step 1: Greeting detected, no buttons shown")
             else:
-                # User asked a real question first - ask about tone preference
+                # User asked a real question first - will ask about tone next
                 quick_replies = []
-                logger.info("🎯 Step 1: Problem detected on first message, will ask about tone")
+                logger.info("🎯 Step 1: Problem detected on first message")
         
         # Step 2: User shared their problem - respond empathetically, NO buttons yet
         elif chat_length == 2:
@@ -340,18 +312,13 @@ def chat():
                 quick_replies = []
                 logger.info("🎯 Step 2: User shared problem after greeting, no buttons yet")
             else:
-                # They selected tone on previous step - show topics
+                # They selected tone on previous step - no more buttons, just chat
                 user_tone = session['chat_history'][1]['user'].strip()
                 if user_tone in ["Professional", "Casual"]:
-                    quick_replies = [
-                        "Work relationships",
-                        "Stress & deadlines",
-                        "Career growth",
-                        "Team conflicts"
-                    ]
                     session['tone'] = user_tone
                     session.modified = True
-                    logger.info(f"🎯 Step 2: Tone '{user_tone}' selected, sending topic buttons")
+                    quick_replies = []
+                    logger.info(f"🎯 Step 2: Tone '{user_tone}' selected, continuing conversation")
         
         # Step 3: After empathetic response - NOW ask how they want responses & show tone buttons
         elif chat_length == 3:
@@ -367,31 +334,20 @@ def chat():
                 # Check if they just selected a tone
                 user_tone = session['chat_history'][2]['user'].strip()
                 if user_tone in ["Professional", "Casual"]:
-                    quick_replies = [
-                        "Work relationships",
-                        "Stress & deadlines",
-                        "Career growth",
-                        "Team conflicts"
-                    ]
                     session['tone'] = user_tone
                     session.modified = True
-                    logger.info(f"🎯 Step 3: Tone '{user_tone}' selected, sending topic buttons")
+                    quick_replies = []
+                    logger.info(f"🎯 Step 3: Tone '{user_tone}' selected, continuing conversation")
         
-        # Step 4: After tone is selected - offer topic buttons
-        elif chat_length == 4:
-            # Check if user selected a tone in the previous message
-            user_tone = session['chat_history'][3]['user'].strip()
+        # Step 4+: After tone is selected - NO MORE BUTTONS, just natural conversation
+        elif chat_length >= 4:
+            # Check if user just selected a tone
+            user_tone = session['chat_history'][-1]['user'].strip()
             if user_tone in ["Professional", "Casual"]:
-                quick_replies = [
-                    "Work relationships",
-                    "Stress & deadlines",
-                    "Career growth",
-                    "Team conflicts"
-                ]
-                # Store selected tone in session
                 session['tone'] = user_tone
                 session.modified = True
-                logger.info(f"🎯 Step 4: Tone '{user_tone}' selected, sending topic buttons")
+                logger.info(f"🎯 Step 4+: Tone '{user_tone}' selected")
+            quick_replies = []  # No more buttons - let the bot provide actionable advice
         
         return jsonify({
             'response': ai_response,
