@@ -153,24 +153,32 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         if user_message.strip() in ["Professional", "Casual"]:
             selected_tone = user_message.strip()
             
-            # Get the user's last substantive message (not just tone selection)
+            # Get the user's problem from chat history
             if chat_history:
-                # Extract the last user message from chat history
+                # Extract all user messages from chat history
                 history_lines = chat_history.strip().split('\n')
-                last_user_msg = None
-                for line in reversed(history_lines):
+                user_messages = []
+                for line in history_lines:
                     if line.startswith('User:'):
-                        last_user_msg = line.replace('User:', '').strip()
-                        break
+                        msg = line.replace('User:', '').strip()
+                        # Skip greetings and tone selections
+                        if msg.lower() not in ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'professional', 'casual']:
+                            user_messages.append(msg)
                 
-                # If we found their problem, respond to it directly in the selected tone
-                if last_user_msg and last_user_msg not in ["Professional", "Casual"]:
-                    # Don't just acknowledge tone - jump straight into helping with their problem
-                    # The system prompt will handle the tone, just return empty to let GPT respond
-                    pass  # Let it fall through to normal GPT response
+                # If we found their problem, respond to it directly
+                if user_messages:
+                    # Create a new prompt that includes their problem
+                    user_problem = user_messages[-1]  # Get the most recent problem statement
+                    
+                    # Let GPT respond to their original problem in the selected tone
+                    # We'll modify the user_message to be their problem, not the tone selection
+                    # But first acknowledge the tone selection
+                    # Actually, let's not return here - continue to GPT with the proper context
+                    pass  # Fall through to normal GPT response which has the full context
             
-            # If no context, just acknowledge
-            return f"Perfect! I'll keep it {selected_tone.lower()}. What's the situation?"
+            # Don't return generic message - GPT will handle it with context
+            # Just let it fall through to the normal response generation
+            pass
         
         # Define tone-specific instructions
         if tone == "Casual":
@@ -223,6 +231,11 @@ KEY RULES:
 ⸻
 
 🎯 CONVERSATION APPROACH:
+
+**When user just selected their tone (Professional/Casual):**
+- Look at the chat history to see what problem they described
+- IMMEDIATELY give them actionable advice about their problem
+- Don't ask "What's the situation?" - you already know it from chat history!
 
 **First response to a problem:** Ask 1 clarifying question to understand better
 **Second response onwards:** Give actionable STEP or 4Rs advice with bullets
