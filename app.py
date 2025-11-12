@@ -90,7 +90,7 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
         logger.error(f"Error retrieving context: {str(e)}")
         return "No context available."
 
-def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional") -> str:
+def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional", chat_length: int = 0) -> str:
     """Generate response using GPT-4o-mini with STEP + 4Rs framework and Qdrant context"""
     try:
         # Safety check - Harmful content
@@ -108,6 +108,10 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         health_keywords = ['headache', 'sick', 'pain', 'fever', 'medication', 'doctor', 'hospital', 'injury', 'hurt']
         if any(keyword in user_message.lower() for keyword in health_keywords):
             return "I'm specifically designed for workplace communication challenges. For health concerns, please consult a medical professional. Can we focus on a work-related communication or teamwork challenge instead?"
+        
+        # Special handling for message 3 - Ask about tone preference
+        if chat_length == 3:
+            return "Before we dive in — how would you like me to respond? Pick the style that feels right for you."
         
         # Special handling for tone selection
         if user_message.strip() in ["Professional", "Casual"]:
@@ -288,8 +292,11 @@ def chat():
         # Get selected tone (default to Professional)
         selected_tone = session.get('tone', 'Professional')
         
+        # Calculate chat length BEFORE adding current message (for tone question detection)
+        current_chat_length = len(history) + 1
+        
         # Generate response using GPT-4o-mini with Qdrant context
-        ai_response = generate_response(user_message, context, chat_history, selected_tone)
+        ai_response = generate_response(user_message, context, chat_history, selected_tone, current_chat_length)
         
         # Store in session history
         if 'chat_history' not in session:
@@ -304,7 +311,7 @@ def chat():
         
         logger.info(f"✅ AI: {ai_response[:100]}...")
         
-        # Three-step quick reply flow
+        # Four-step quick reply flow
         quick_replies = []
         chat_length = len(session.get('chat_history', []))
         
@@ -318,20 +325,20 @@ def chat():
                 quick_replies = []
                 logger.info("👋 Step 1: Greeting detected, no buttons shown")
             else:
-                # User asked a real question first - show tone buttons
-                quick_replies = ["Professional", "Casual"]
-                logger.info("🎯 Step 1: Problem detected on first message, showing tone buttons")
+                # User asked a real question first - ask about tone preference
+                quick_replies = []
+                logger.info("🎯 Step 1: Problem detected on first message, will ask about tone")
         
-        # Step 2: When user asks their problem/challenge - offer tone selection
+        # Step 2: User shared their problem - respond empathetically, NO buttons yet
         elif chat_length == 2:
             # Check if previous message was just greeting
             prev_msg = session['chat_history'][0]['user'].lower().strip()
             greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
             
             if prev_msg in greeting_words:
-                # Now they're asking their problem - show tone buttons
-                quick_replies = ["Professional", "Casual"]
-                logger.info("🎯 Step 2: User shared problem, showing tone buttons")
+                # They shared problem after greeting - respond empathetically, NO buttons yet
+                quick_replies = []
+                logger.info("🎯 Step 2: User shared problem after greeting, no buttons yet")
             else:
                 # They selected tone on previous step - show topics
                 user_tone = session['chat_history'][1]['user'].strip()
@@ -346,10 +353,34 @@ def chat():
                     session.modified = True
                     logger.info(f"🎯 Step 2: Tone '{user_tone}' selected, sending topic buttons")
         
-        # Step 3: After tone is selected - offer topic buttons
+        # Step 3: After empathetic response - NOW ask how they want responses & show tone buttons
         elif chat_length == 3:
+            # Check if first was greeting and second was problem
+            first_msg = session['chat_history'][0]['user'].lower().strip()
+            greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo']
+            
+            if first_msg in greeting_words:
+                # Now ask about tone preference with buttons
+                quick_replies = ["Professional", "Casual"]
+                logger.info("🎯 Step 3: Asking tone preference, showing tone buttons")
+            else:
+                # Check if they just selected a tone
+                user_tone = session['chat_history'][2]['user'].strip()
+                if user_tone in ["Professional", "Casual"]:
+                    quick_replies = [
+                        "Work relationships",
+                        "Stress & deadlines",
+                        "Career growth",
+                        "Team conflicts"
+                    ]
+                    session['tone'] = user_tone
+                    session.modified = True
+                    logger.info(f"🎯 Step 3: Tone '{user_tone}' selected, sending topic buttons")
+        
+        # Step 4: After tone is selected - offer topic buttons
+        elif chat_length == 4:
             # Check if user selected a tone in the previous message
-            user_tone = session['chat_history'][2]['user'].strip()
+            user_tone = session['chat_history'][3]['user'].strip()
             if user_tone in ["Professional", "Casual"]:
                 quick_replies = [
                     "Work relationships",
@@ -360,7 +391,7 @@ def chat():
                 # Store selected tone in session
                 session['tone'] = user_tone
                 session.modified = True
-                logger.info(f"🎯 Step 3: Tone '{user_tone}' selected, sending topic buttons")
+                logger.info(f"🎯 Step 4: Tone '{user_tone}' selected, sending topic buttons")
         
         return jsonify({
             'response': ai_response,
