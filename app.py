@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")
-CORS(app)
+
+# Configure CORS for specific origins from environment variable
+cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
+CORS(app, 
+     origins=cors_origins if cors_origins[0] else ["*"],
+     supports_credentials=True)
 
 # Configuration
 QDRANT_URL = os.getenv("QDRANT_URL")

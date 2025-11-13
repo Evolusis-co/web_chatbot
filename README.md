@@ -91,36 +91,317 @@ python app.py
 
 If someone already has a frontend (HTML + JS) and wants to use our backend while keeping the exact flow (tone selection → topics → full coaching), follow these steps.
 
-1. Hook your send button (or message submit) to call `/api/chat` with a JSON body: `{ message: "text" }`.
-2. When you get the response JSON, always display the `response` text as the bot's message.
-3. If `quick_replies` is a non-empty array, render them as buttons under the bot message. When a user clicks a quick-reply button, send its label as a new message to `/api/chat` (just like typing it). The backend treats tone labels ("Professional" or "Casual") specially and will save the selection.
+### ⚠️ **CRITICAL: HTML Formatting Requirement**
 
-Example minimal client-side fetch (copy to your JS):
+**The API returns HTML-formatted responses that MUST be rendered properly, or your UI will look broken!**
+
+#### What the API sends you:
+
+```json
+{
+  "response": "Here's how to handle it:<br><br>• <b>Spot</b> - Identify the issue<br>• <b>Think</b> - Consider options",
+  "success": true
+}
+```
+
+Notice the `<b>` tags (for bold text) and `<br>` tags (for line breaks).
+
+#### ✅ CORRECT Way (Required):
+
+**Vanilla JavaScript:**
+```javascript
+// ✅ Use innerHTML - renders HTML tags properly
+messageElement.innerHTML = data.response;
+```
+
+**React:**
+```jsx
+// ✅ Use dangerouslySetInnerHTML
+<div dangerouslySetInnerHTML={{ __html: data.response }} />
+```
+
+**Vue:**
+```vue
+<!-- ✅ Use v-html -->
+<div v-html="data.response"></div>
+```
+
+#### ❌ WRONG Way (DO NOT DO THIS):
+
+```javascript
+// ❌ WRONG - Shows literal HTML tags like "<b>Spot</b>"
+messageElement.textContent = data.response;  // DON'T USE THIS!
+```
+
+```vue
+<!-- ❌ WRONG - Vue interpolation doesn't render HTML -->
+<div>{{ data.response }}</div>  <!-- DON'T USE THIS! -->
+```
+
+#### Why is this safe?
+
+✅ **It's safe to use `innerHTML`** because:
+- All responses come from YOUR API (trusted source)
+- GPT-4o-mini only outputs `<b>` and `<br>` tags (no scripts or dangerous HTML)
+- No user-generated content is injected
+
+#### What it looks like when done correctly:
+
+**API Response:**
+```
+"Here's what to do:<br><br>• <b>Spot</b> - The problem<br>• <b>Think</b> - Solutions"
+```
+
+**Rendered in Browser:**
+```
+Here's what to do:
+
+• Spot - The problem
+• Think - Solutions
+```
+(Note: "Spot" and "Think" appear in bold)
+
+---
+
+### Step-by-Step Integration:
+
+1. Hook your send button (or message submit) to call `/api/chat` with a JSON body: `{ message: "text" }`.
+
+2. When you get the response JSON, **display the `response` text using `innerHTML` (or equivalent)**:
 
 ```javascript
 async function sendToBackend(text) {
 	const res = await fetch('/api/chat', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include',  // Important for session cookies!
 		body: JSON.stringify({ message: text })
 	});
 	const data = await res.json();
-	// data.response -> add to chat UI
-	// data.quick_replies -> render buttons if present
+	
+	// ✅ CRITICAL: Use innerHTML to render HTML formatting
+	displayBotMessage(data.response);  // See helper function below
+	
+	// Show quick reply buttons if present
+	if (data.quick_replies && data.quick_replies.length > 0) {
+		displayQuickReplies(data.quick_replies);
+	}
+	
 	return data;
+}
+
+// Helper function to display bot messages with HTML rendering
+function displayBotMessage(htmlText) {
+	const messageDiv = document.createElement('div');
+	messageDiv.className = 'message bot';
+	
+	const contentDiv = document.createElement('div');
+	contentDiv.className = 'message-content';
+	
+	// ✅ CRITICAL: Use innerHTML (NOT textContent!)
+	contentDiv.innerHTML = htmlText;
+	
+	messageDiv.appendChild(contentDiv);
+	chatContainer.appendChild(messageDiv);
+}
+```
+
+3. If `quick_replies` is a non-empty array, render them as buttons under the bot message. When a user clicks a quick-reply button, send its label as a new message to `/api/chat` (just like typing it). The backend treats tone labels ("Professional" or "Casual") specially and will save the selection.
+
+```javascript
+function displayQuickReplies(replies) {
+	const container = document.getElementById('quick-replies-container');
+	container.innerHTML = ''; // Clear previous buttons
+	
+	replies.forEach(reply => {
+		const button = document.createElement('button');
+		button.textContent = reply;
+		button.className = 'quick-reply-btn';
+		button.onclick = () => {
+			sendToBackend(reply); // Send button text as message
+			container.innerHTML = ''; // Clear buttons after click
+		};
+		container.appendChild(button);
+	});
 }
 ```
 
 4. Tone behavior: when `quick_replies` contains `Professional` and `Casual`, show them prominently. When the user clicks one, send the button text to the backend. The backend will store the tone in the session and apply it to subsequent replies.
 
-5. Session behavior: the backend clears chat history when the page is loaded. If you want to preserve history across refreshes instead, you can remove the clearing logic in `app.py` (the `index()` route).
+5. Session behavior: **Always include `credentials: 'include'`** in your fetch requests so Flask sessions work properly:
+
+```javascript
+fetch('/api/chat', {
+	method: 'POST',
+	headers: { 'Content-Type': 'application/json' },
+	credentials: 'include',  // ← REQUIRED for sessions!
+	body: JSON.stringify({ message: text })
+});
+```
+
+---
+
+### Complete React Example:
+
+```jsx
+import { useState } from 'react';
+
+function ChatBot() {
+  const [messages, setMessages] = useState([]);
+  const [quickReplies, setQuickReplies] = useState([]);
+
+  const sendMessage = async (text) => {
+    // Add user message
+    setMessages(prev => [...prev, { text, role: 'user' }]);
+
+    // Send to API
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ message: text })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      // Add AI response
+      setMessages(prev => [...prev, { text: data.response, role: 'ai' }]);
+      setQuickReplies(data.quick_replies || []);
+    }
+  };
+
+  return (
+    <div className="chatbot">
+      {/* Render messages */}
+      {messages.map((msg, idx) => (
+        <div key={idx} className={`message ${msg.role}`}>
+          {msg.role === 'ai' ? (
+            /* ✅ CRITICAL: Use dangerouslySetInnerHTML for AI messages */
+            <div dangerouslySetInnerHTML={{ __html: msg.text }} />
+          ) : (
+            /* User messages don't have HTML */
+            <div>{msg.text}</div>
+          )}
+        </div>
+      ))}
+      
+      {/* Quick reply buttons */}
+      {quickReplies.length > 0 && (
+        <div className="quick-replies">
+          {quickReplies.map(reply => (
+            <button key={reply} onClick={() => {
+              sendMessage(reply);
+              setQuickReplies([]); // Clear buttons
+            }}>
+              {reply}
+            </button>
+          ))}
+        </div>
+      )}
+      
+      {/* Input field */}
+      <input 
+        onKeyPress={(e) => {
+          if (e.key === 'Enter' && e.target.value.trim()) {
+            sendMessage(e.target.value);
+            e.target.value = '';
+          }
+        }}
+        placeholder="Type your message..."
+      />
+    </div>
+  );
+}
+```
+
+---
+
+### Complete Vue Example:
+
+```vue
+<template>
+  <div class="chatbot">
+    <!-- Render messages -->
+    <div 
+      v-for="(msg, idx) in messages" 
+      :key="idx" 
+      :class="`message ${msg.role}`"
+    >
+      <!-- ✅ CRITICAL: Use v-html for AI messages -->
+      <div v-if="msg.role === 'ai'" v-html="msg.text"></div>
+      <!-- User messages don't have HTML -->
+      <div v-else>{{ msg.text }}</div>
+    </div>
+
+    <!-- Quick reply buttons -->
+    <div v-if="quickReplies.length" class="quick-replies">
+      <button 
+        v-for="reply in quickReplies" 
+        :key="reply"
+        @click="sendMessage(reply); quickReplies = []"
+      >
+        {{ reply }}
+      </button>
+    </div>
+
+    <!-- Input field -->
+    <input 
+      v-model="inputText" 
+      @keyup.enter="sendMessage(inputText); inputText = ''"
+      placeholder="Type your message..."
+    />
+  </div>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      messages: [],
+      quickReplies: [],
+      inputText: ''
+    };
+  },
+  methods: {
+    async sendMessage(text) {
+      if (!text.trim()) return;
+      
+      // Add user message
+      this.messages.push({ text, role: 'user' });
+
+      // Send to API
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ message: text })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        this.messages.push({ 
+          text: data.response, 
+          role: 'ai'
+        });
+        this.quickReplies = data.quick_replies || [];
+      }
+    }
+  }
+};
+</script>
+```
 
 ## Troubleshooting & tips (non-technical)
 
+- **If bold text shows as `<b>tags</b>` instead of bold:** You're using `textContent` or `{{ }}` interpolation. Switch to `innerHTML` (JS), `dangerouslySetInnerHTML` (React), or `v-html` (Vue). See "HTML Formatting Requirement" section above.
+- **If there are no line breaks between bullet points:** Same issue - you need to render HTML. `<br>` tags only work with `innerHTML`.
 - If buttons don't appear: open your browser dev tools (F12) → Console and Network. Look at the `/api/chat` response — it should include `quick_replies`.
 - If the UI seems out-of-date after code changes: do a hard refresh (Ctrl+Shift+R) to clear cached JS/CSS.
 - If the app doesn't start: make sure you activated the virtual environment and installed packages in that environment.
 - If embeddings or Qdrant responses are empty: double-check `QDRANT_URL` and `QDRANT_API_KEY` and that your collection name (`bridgetext_scenarios`) exists.
+- **If session doesn't persist (tone resets):** Make sure you're including `credentials: 'include'` in all fetch requests.
 
 ## Customization ideas (if you want to extend)
 
