@@ -11,8 +11,8 @@ from openai import OpenAI
 import logging
 from datetime import datetime
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (don't override existing ones from Render)
+load_dotenv(override=False)
 
 # Configure logging
 logging.basicConfig(
