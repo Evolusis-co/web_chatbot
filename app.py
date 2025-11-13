@@ -162,7 +162,7 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         # DON'T ask for tone preference here - let the button logic handle it
         # This allows for more natural conversation flow
         
-        # Special handling for tone selection - Use chat history to continue the conversation
+        # Special handling for tone selection - Respond to their ORIGINAL problem
         if user_message.strip() in ["Professional", "Casual"]:
             selected_tone = user_message.strip()
             
@@ -178,20 +178,12 @@ I'm designed to help with workplace communication challenges, not crisis or safe
                         if msg.lower() not in ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'professional', 'casual']:
                             user_messages.append(msg)
                 
-                # If we found their problem, respond to it directly
+                # If we found their problem, REPLACE user_message with it
                 if user_messages:
-                    # Create a new prompt that includes their problem
                     user_problem = user_messages[-1]  # Get the most recent problem statement
-                    
-                    # Let GPT respond to their original problem in the selected tone
-                    # We'll modify the user_message to be their problem, not the tone selection
-                    # But first acknowledge the tone selection
-                    # Actually, let's not return here - continue to GPT with the proper context
-                    pass  # Fall through to normal GPT response which has the full context
-            
-            # Don't return generic message - GPT will handle it with context
-            # Just let it fall through to the normal response generation
-            pass
+                    # CRITICAL: Replace "Casual" with their actual problem so GPT responds to THAT
+                    user_message = user_problem
+                    logger.info(f"🔄 Tone selected: {selected_tone}. Responding to original problem: {user_problem[:50]}...")
         
         # Define tone-specific instructions
         if tone == "Casual":
@@ -348,6 +340,7 @@ def chat():
     try:
         data = request.get_json()
         user_message = data.get('message', '').strip()
+        original_user_message = user_message  # Save original before any modifications
         
         if not user_message:
             return jsonify({'error': 'Message cannot be empty'}), 400
@@ -386,12 +379,12 @@ def chat():
         # Generate response using GPT-4o-mini with Qdrant context
         ai_response = generate_response(user_message, context, chat_history, selected_tone, current_chat_length)
         
-        # Store in session history
+        # Store in session history (use ORIGINAL message if tone was selected)
         if 'chat_history' not in session:
             session['chat_history'] = []
         
         session['chat_history'].append({
-            'user': user_message,
+            'user': original_user_message,  # Store "Casual" or "Professional", not the replaced problem
             'ai': ai_response,
             'timestamp': datetime.now().isoformat()
         })
