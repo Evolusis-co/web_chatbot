@@ -95,17 +95,14 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
         logger.error(f"Error retrieving context: {str(e)}")
         return "No context available."
 
-def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = "Professional", chat_length: int = 0) -> str:
+def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = None, chat_length: int = 0) -> str:
     """Generate response using GPT-4o-mini with STEP + 4Rs framework and Qdrant context"""
     try:
         # Check if this is a greeting (first message)
         greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'helo', 'hola']
         if user_message.lower().strip() in greeting_words and chat_length == 1:
-            # Return friendly, natural greeting based on tone
-            if tone == "Casual":
-                return "Hey! What's up? What's going on at work?"
-            else:
-                return "Hello! How can I help you with your workplace challenges today?"
+            # Return friendly, natural greeting (no tone needed for greetings)
+            return "Hello! How can I help you with your workplace challenges today?"
         
         # Safety check - Physical violence/abuse (CRITICAL) - Only if it's clearly physical violence
         # Improved: Check for context to avoid false positives (e.g., "beat me in workload")
@@ -159,118 +156,60 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         if any(keyword in user_message.lower() for keyword in health_keywords):
             return "I'm specifically designed for workplace communication challenges. For health concerns, please consult a medical professional. Can we focus on a work-related communication or teamwork challenge instead?"
         
-        # DON'T ask for tone preference here - let the button logic handle it
-        # This allows for more natural conversation flow
-        
-        # Special handling for tone selection - Respond to their ORIGINAL problem
-        if user_message.strip() in ["Professional", "Casual"]:
-            selected_tone = user_message.strip()
-            
-            # Get the user's problem from chat history
-            if chat_history:
-                # Extract all user messages from chat history
-                history_lines = chat_history.strip().split('\n')
-                user_messages = []
-                for line in history_lines:
-                    if line.startswith('User:'):
-                        msg = line.replace('User:', '').strip()
-                        # Skip greetings and tone selections
-                        if msg.lower() not in ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'professional', 'casual']:
-                            user_messages.append(msg)
-                
-                # If we found their problem, REPLACE user_message with it
-                if user_messages:
-                    user_problem = user_messages[-1]  # Get the most recent problem statement
-                    # CRITICAL: Replace "Casual" with their actual problem so GPT responds to THAT
-                    user_message = user_problem
-                    logger.info(f"🔄 Tone selected: {selected_tone}. Responding to original problem: {user_problem[:50]}...")
-        
         # Define tone-specific instructions
+        tone_instruction = ""
         if tone == "Casual":
-            tone_instruction = """⚠️ MANDATORY CASUAL TONE - DO NOT USE FORMAL LANGUAGE:
-• Sound like texting a smart friend - relaxed, Gen Z, conversational
-• MUST use phrases like: "That sucks", "Ugh that's rough", "Yeah I totally get it", "Super frustrating"
-• ALWAYS use contractions: "you're", "that's", "don't", "can't", "it's"
-• Keep it SHORT and REAL - like you're texting, NOT writing an essay
-• Be supportive but chill: "Okay let's figure this out" NOT "I understand your concern"
-• NEVER say: "I appreciate", "However", "It's important to maintain", "effectively address"
-• 🚨 AFTER TONE SELECTION: Give IMMEDIATE STEP or 4Rs advice - DON'T ask questions
-• Example CORRECT casual: "Ugh that really sucks. Here's what I'd do using STEP: First, spot what you can delegate..."
+            tone_instruction = """
+🎯 YOU MUST USE CASUAL/FRIENDLY TONE:
+- Write like you're texting a friend - use "gonna", "wanna", "that sucks", "ugh"
+- NEVER use formal phrases like "I understand", "Let us", "effectively", "navigate"
+- Keep it SHORT and conversational
+- Use contractions always: "you're", "don't", "can't", "it's"
 """
-        else:  # Professional
-            tone_instruction = """⚠️ MANDATORY PROFESSIONAL TONE - DO NOT USE SLANG:
-• Sound like a workplace mentor or HR coach - measured, empathetic, formal
-• Use complete sentences with proper grammar
-• Use phrases like: "I understand this is challenging", "That's a difficult situation", "Let's explore this together"
-• Be empathetic but maintain professional distance
-• NEVER use slang or casual phrases like "sucks", "ugh", "totally"
-• 🚨 AFTER TONE SELECTION: Give IMMEDIATE STEP or 4Rs advice - DON'T ask questions
-• Example CORRECT professional: "That's challenging. Let me suggest a STEP framework approach: Begin by spotting which tasks have imminent deadlines..."
+        elif tone == "Professional":
+            tone_instruction = """
+🎯 YOU MUST USE PROFESSIONAL TONE:
+- Sound like a workplace mentor - clear, respectful, structured
+- Use complete sentences and proper grammar
+- Professional but warm and supportive
+"""
+        else:
+            # NO TONE SELECTED - ASK QUESTIONS ONLY
+            tone_instruction = """
+🎯 NO TONE SELECTED - YOU MUST ASK QUESTIONS:
+- User hasn't picked tone yet
+- DO NOT give advice or frameworks yet
+- Ask 1-2 brief questions to understand their situation
+- Keep it neutral and friendly
 """
         
-        system_prompt = f"""You are a Gen Z workplace coach helping young professionals with work challenges.
+        # Build system prompt - ONLY for when tone is selected
+        if tone == "Casual":
+            system_prompt = f"""You're a Gen Z workplace coach helping with: "{user_message}"
 
-Use these frameworks:
-• STEP (Adaptability): Spot → Think → Engage → Perform
-• 4Rs (Emotional Intelligence): Recognize → Regulate → Respect → Reflect
+CRITICAL - Use SUPER CASUAL Gen Z language:
+- Start with casual reactions: "Ugh that sucks", "Oof", "Damn", "Yikes"
+- Use slang: "gonna", "wanna", "def", "totally", "fr" (for real)
+- Give DETAILED, PRACTICAL advice - not just framework labels
+- Each bullet should have SPECIFIC actionable steps
+- Format: <b>Spot</b> - detailed practical advice here<br><b>Think</b> - specific steps to take
+- Keep under 80 words but make it USEFUL
 
-⸻
+Example BAD response: "• <b>Spot</b> - Know your worth"
+Example GOOD response: "• <b>Spot</b> - Research what others in your role make (use Glassdoor, Payscale). List your wins from the past year"
 
-🎯 CRITICAL FORMATTING INSTRUCTIONS:
+Give SUPER casual STEP or 4Rs advice with PRACTICAL details:"""
+        else:  # Professional  
+            system_prompt = f"""You're a Gen Z workplace coach helping with: "{user_message}"
 
-Your response will be displayed in a web chat interface. Format it using HTML:
+Give professional advice using STEP or 4Rs:
+- Professional but warm
+- Give DETAILED, PRACTICAL advice - not just framework labels
+- Each bullet should have SPECIFIC actionable steps
+- Format: <b>Spot</b> - detailed advice<br><b>Think</b> - specific steps
+- Keep under 80 words but make it USEFUL
 
-1. Use <b>keyword</b> for bold text (e.g., <b>Spot</b>, <b>Think</b>)
-2. Use <br> for line breaks between bullet points (single break only!)
-3. Use • symbol for bullets
-
-Example format:
-"Ugh that sounds rough. Here's how to handle it with STEP:<br><br>• <b>Spot</b> - Figure out which tasks are urgent<br>• <b>Think</b> - Your boss might not realize they're overloading you<br>• <b>Engage</b> - Ask for a quick 15-min priority check<br>• <b>Perform</b> - Track progress and escalate if needed<br><br>Sound good?"
-
-KEY RULES:
-- NEVER use **text** for bold, use <b>text</b> instead
-- NEVER use \\n for line breaks, use <br> instead
-- Use <br> (single break) between bullets, <br><br> (double break) only after intro text
-- NEVER use numbered lists (1. 2. 3.), always use bullets (•)
-- Keep total response under 120 words
-
-⸻
-
-🎯 TONE:
-{tone_instruction}
-
-⸻
-
-🎯 CONVERSATION APPROACH:
-
-**When user JUST selected their tone (Professional/Casual):**
-- Look at the PREVIOUS message (before tone selection) to see what problem they described
-- Respond directly to THAT problem in the selected tone
-- Don't say "I understand this is challenging" - that's generic filler
-- Jump straight into helping with their specific issue
-
-**CRITICAL - ALWAYS acknowledge NEW information:**
-- If user adds deadlines, urgency, constraints, or new details → ACKNOWLEDGE IT in your response!
-- Example: User says "submission is within 3 days" → Respond with deadline urgency in mind
-- NEVER ignore what the user just told you
-
-**General flow:**
-- First response to a problem: Ask 1 clarifying question
-- Second response onwards: Give actionable STEP or 4Rs advice with bullets
-- Keep responses SHORT and conversational
-
-⸻
-
-**CONTEXT FROM YOUR DATASET:**
-{context}
-
-**PREVIOUS CONVERSATION:**
-{chat_history}
-
-**USER JUST SAID:**
-{user_message}
-
-**YOUR RESPONSE (Use <b> for bold, <br><br> between bullets):**"""
+Give professional STEP or 4Rs advice with PRACTICAL details:"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -278,8 +217,8 @@ KEY RULES:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            temperature=0.5,  # Reduced from 0.7 for more consistent tone adherence
-            max_tokens=200
+            temperature=0.7,  # Higher for more natural/varied responses
+            max_tokens=250  # Increased for complete 4-step responses
         )
         
         raw_response = response.choices[0].message.content.strip()
@@ -300,27 +239,32 @@ def format_response(text: str) -> str:
     # Replace **text** with <b>text</b> for bold
     text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
     
-    # If response contains bullets, ensure proper line breaks (compact spacing!)
+    # If GPT already added <br> tags, we're good - just clean up extras
+    if '<br>' in text:
+        # Clean up excessive line breaks (more than 2 in a row)
+        text = re.sub(r'(<br>\s*){3,}', '<br><br>', text)
+        return text
+    
+    # If no <br> tags, add them between bullets
     if '•' in text:
         # Split by bullet points
-        parts = text.split('•')
-        intro = parts[0].strip()
-        bullets = ['• ' + part.strip() for part in parts[1:] if part.strip()]
+        lines = text.split('•')
+        intro = lines[0].strip()
+        bullets = []
         
-        # Rejoin with SINGLE line break only (compact!)
+        for line in lines[1:]:
+            line = line.strip()
+            if line:
+                bullets.append('• ' + line)
+        
+        # Rejoin with proper line breaks
         if bullets:
-            formatted_bullets = '<br>'.join(bullets)  # Single <br> between bullets
-            text = f"{intro}<br><br>{formatted_bullets}"  # Double break only after intro
+            formatted_bullets = '<br>'.join(bullets)
+            text = f"{intro}<br><br>{formatted_bullets}"
     
-    # Replace numbered lists with bullets if present
+    # Replace numbered lists with bullets
     text = re.sub(r'(\d+)\.\s+\*\*([^*]+)\*\*', r'• <b>\2</b>', text)
     text = re.sub(r'(\d+)\.\s+<b>([^<]+)</b>', r'• <b>\2</b>', text)
-    
-    # Ensure line breaks after framework introductions (but keep it compact)
-    text = re.sub(r'(using STEP:|with STEP:|STEP method:|4Rs framework:)', r'\1<br><br>', text, flags=re.IGNORECASE)
-    
-    # Clean up any triple or quadruple line breaks that might have slipped through
-    text = re.sub(r'<br>\s*<br>\s*<br>+', '<br><br>', text)  # Max 2 breaks
     
     return text
 
@@ -372,8 +316,55 @@ def chat():
         history = session.get('chat_history', [])
         chat_history = "\n".join([f"User: {h['user']}\nAI: {h['ai']}" for h in history[-4:]])  # Last 4 exchanges for better context
         
-        # Get selected tone (default to Professional)
-        selected_tone = session.get('tone', 'Professional')
+        # HANDLE TONE SELECTION FIRST
+        if user_message.strip() in ["Professional", "Casual"]:
+            selected_tone = user_message.strip()
+            
+            # Save the selected tone
+            session['tone'] = selected_tone
+            session.modified = True
+            logger.info(f"✅ Tone '{selected_tone}' saved to session")
+            
+            # Get the user's problem from chat history
+            user_messages = []
+            for h in history:
+                msg = h['user']
+                # Skip greetings and tone selections
+                if msg.lower() not in ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'professional', 'casual', 'before i help you with this, how would you like me to respond?']:
+                    user_messages.append(msg)
+            
+            # If we found their problem, REPLACE user_message with it
+            if user_messages:
+                user_message = user_messages[-1]  # Get the most recent problem statement
+                logger.info(f"🔄 Tone selected: {selected_tone}. Responding to original problem: {user_message[:50]}...")
+        
+        # Get selected tone (NO DEFAULT - should be None if not set)
+        selected_tone = session.get('tone', None)
+        
+        # Check if this is a real query (not greeting) and no tone selected yet
+        greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'howdy']
+        is_greeting = user_message.lower().strip() in greeting_words
+        
+        # If no tone selected and not a greeting, ask for tone FIRST
+        if selected_tone is None and not is_greeting:
+            ai_response = "Before I help you with this, how would you like me to respond?"
+            
+            # Store in history
+            if 'chat_history' not in session:
+                session['chat_history'] = []
+            
+            session['chat_history'].append({
+                'user': original_user_message,
+                'ai': ai_response,
+                'timestamp': datetime.now().isoformat()
+            })
+            session.modified = True
+            
+            return jsonify({
+                'response': ai_response,
+                'quick_replies': ["Professional", "Casual"],
+                'success': True
+            })
         
         # Calculate chat length BEFORE adding current message (for tone question detection)
         current_chat_length = len(history) + 1
