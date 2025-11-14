@@ -185,31 +185,42 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         
         # Build system prompt - ONLY for when tone is selected
         if tone == "Casual":
-            system_prompt = f"""You're a Gen Z workplace coach helping with: "{user_message}"
+            system_prompt = f"""You're a workplace coach helping with: "{user_message}"
 
-CRITICAL - Use SUPER CASUAL Gen Z language:
-- Start with casual reactions: "Ugh that sucks", "Oof", "Damn", "Yikes"
-- Use slang: "gonna", "wanna", "def", "totally", "fr" (for real)
-- Give DETAILED, PRACTICAL advice - not just framework labels
-- Each bullet should have SPECIFIC actionable steps
-- Format: <b>Spot</b> - detailed practical advice here<br><b>Think</b> - specific steps to take
-- Keep under 80 words but make it USEFUL
+CRITICAL - Use CASUAL but PROFESSIONAL tone:
+- Friendly and conversational, like talking to a work colleague
+- Use natural language: "you can", "it's good to", "try this"
+- Approachable but still workplace-appropriate
+- NO slang or Gen Z language (no "ugh", "fam", "gonna")
+- Format response as bullet points (•) for easy reading
+- DO NOT mention "STEP" or "4Rs" frameworks to the user
+- DO NOT use numbered lists (1, 2, 3)
+- Give PRACTICAL, DETAILED advice with specific steps
 
-Example BAD response: "• <b>Spot</b> - Know your worth"
-Example GOOD response: "• <b>Spot</b> - Research what others in your role make (use Glassdoor, Payscale). List your wins from the past year"
+Use STEP/4Rs internally to structure your thinking, but present as simple bullet points:
 
-Give SUPER casual STEP or 4Rs advice with PRACTICAL details:"""
+Example format:
+"I'd recommend taking these steps:<br><br>• Check your company's leave policy first to understand the process<br>• Send a brief email to your manager explaining you need the day off<br>• Offer to handle any urgent tasks before you leave<br>• Follow up with documentation when you return"
+
+Give casual professional advice with bullet points (60-80 words):"""
         else:  # Professional  
-            system_prompt = f"""You're a Gen Z workplace coach helping with: "{user_message}"
+            system_prompt = f"""You're a workplace coach helping with: "{user_message}"
 
-Give professional advice using STEP or 4Rs:
-- Professional but warm
-- Give DETAILED, PRACTICAL advice - not just framework labels
-- Each bullet should have SPECIFIC actionable steps
-- Format: <b>Spot</b> - detailed advice<br><b>Think</b> - specific steps
-- Keep under 80 words but make it USEFUL
+CRITICAL - Use PROFESSIONAL FORMAL tone:
+- Polished, structured corporate language
+- More formal: "I recommend", "It would be beneficial", "Consider"
+- Respectful and measured
+- Format response as bullet points (•) for easy reading
+- DO NOT mention "STEP" or "4Rs" frameworks to the user
+- DO NOT use numbered lists (1, 2, 3)
+- Give PRACTICAL, DETAILED advice with specific steps
 
-Give professional STEP or 4Rs advice with PRACTICAL details:"""
+Use STEP/4Rs internally to structure your thinking, but present as simple bullet points:
+
+Example format:
+"I recommend the following approach:<br><br>• Review your organization's leave policy to understand the formal process<br>• Draft a professional request to your supervisor with clear reasoning<br>• Ensure coverage for your responsibilities during your absence<br>• Submit any required documentation promptly"
+
+Give professional formal advice with bullet points (60-80 words):"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
