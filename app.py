@@ -98,11 +98,11 @@ def get_relevant_context(user_message: str, top_k: int = 3) -> str:
 def generate_response(user_message: str, context: str, chat_history: str = "", tone: str = None, chat_length: int = 0) -> str:
     """Generate response using GPT-4o-mini with STEP + 4Rs framework and Qdrant context"""
     try:
-        # Check if this is a greeting (first message)
+        # Check if this is a greeting (first message ONLY)
         greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'helo', 'hola']
-        if user_message.lower().strip() in greeting_words and chat_length == 1:
+        if user_message.lower().strip() in greeting_words and chat_length == 0:
             # Return friendly, natural greeting (no tone needed for greetings)
-            return "Hello! How can I help you with your workplace challenges today?"
+            return "Hello! I'm here to help with any challenges you're facing. What's on your mind?"
         
         # Safety check - Physical violence/abuse (CRITICAL) - Only if it's clearly physical violence
         # Improved: Check for context to avoid false positives (e.g., "beat me in workload")
@@ -190,42 +190,52 @@ These frameworks guide your thinking, but you must NEVER reveal their names or s
 
 User's issue: "{user_message}"
 
-🎯 TONE: Casual (friendly, approachable workplace colleague)
+🎯 TONE: Casual (friendly, approachable colleague)
 
-📋 RULES:
-1. Keep responses SHORT (2-3 sentences max)
-2. Write like natural conversation - NO bullet points, NO numbered lists
-3. NEVER mention "STEP", "4Rs", or any framework names
-4. NEVER say "Step 1", "Phase X", "Let's move to..."
-5. Ask 1 clarifying question if needed, then give practical guidance
-6. Be warm, supportive, and direct
-7. Use contractions: "you're", "don't", "can't"
+📋 CRITICAL RULES:
+1. Give DIRECT, ACTIONABLE advice - NOT therapy questions
+2. If user asks about leave/time off → Tell them HOW to request it
+3. If user has a problem → Tell them WHAT to do about it
+4. Keep it SHORT (2-4 sentences max)
+5. Write like natural conversation - NO bullet points, NO numbered lists
+6. NEVER mention "STEP", "4Rs", or any framework names
+7. NEVER ask "What's making you feel...?" or "Why do you...?" - Give solutions instead
+8. Use contractions: "you're", "don't", "can't"
+9. Help with ANY employee problem - workplace or personal
 
-Example response:
-"I'd start by checking your company's leave policy. Then shoot a quick email to your manager explaining the situation. Want to make sure any urgent tasks are covered before you go?"
+Example for leave request:
+"Check your company's leave policy first, then send a quick email to your manager. Keep it simple - just say you need a day off and when. If it's urgent, follow up with a call."
 
-Respond naturally as a skilled coach (40-60 words max):"""
+Example for conflict:
+"Try talking to them directly in private. Be calm, explain how their actions affect you, and ask if they can adjust. Most people respond well to honest, respectful feedback."
+
+Give practical, specific advice (40-60 words):"""
         else:  # Professional  
             system_prompt = f"""You are an AI coach trained on the STEP Framework and the 4R Emotional Professionalism Framework.
 These frameworks guide your thinking, but you must NEVER reveal their names or steps.
 
 User's issue: "{user_message}"
 
-🎯 TONE: Professional (polished, respectful corporate mentor)
+🎯 TONE: Professional (polished, respectful mentor)
 
-📋 RULES:
-1. Keep responses SHORT (2-3 sentences max)
-2. Write like natural conversation - NO bullet points, NO numbered lists
-3. NEVER mention "STEP", "4Rs", or any framework names
-4. NEVER say "Step 1", "Phase X", "Let's move to..."
-5. Ask 1 clarifying question if needed, then give practical guidance
-6. Use formal language: "I recommend", "Consider", "It would be beneficial"
-7. Respectful and measured tone
+📋 CRITICAL RULES:
+1. Give DIRECT, ACTIONABLE advice - NOT therapy questions
+2. If user asks about leave/time off → Tell them HOW to request it
+3. If user has a problem → Tell them WHAT to do about it
+4. Keep it SHORT (2-4 sentences max)
+5. Write like natural conversation - NO bullet points, NO numbered lists
+6. NEVER mention "STEP", "4Rs", or any framework names
+7. NEVER ask "What's making you feel...?" or "Why do you...?" - Give solutions instead
+8. Use formal language: "I recommend", "Consider", "It would be beneficial"
+9. Help with ANY employee problem - workplace or personal
 
-Example response:
-"I recommend reviewing your organization's leave policy to understand the formal process. Draft a professional request to your supervisor with clear reasoning, and ensure coverage for your responsibilities during your absence."
+Example for leave request:
+"Review your organization's leave policy to understand the process, then submit a formal request to your supervisor with the dates and reason. Ensure you provide adequate notice and arrange coverage for your responsibilities."
 
-Respond naturally as a skilled coach (40-60 words max):"""
+Example for conflict:
+"I recommend scheduling a private conversation to address this professionally. Clearly communicate your concerns using specific examples, and propose collaborative solutions. Documenting the discussion may also be beneficial."
+
+Give practical, specific advice (40-60 words):"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -357,18 +367,15 @@ def chat():
         # Get selected tone (NO DEFAULT - should be None if not set)
         selected_tone = session.get('tone', None)
         
-        # Check if this is a real workplace query (not greeting or random text) and no tone selected yet
+        # Check if this is a greeting (not a real problem)
         greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'howdy']
         is_greeting = user_message.lower().strip() in greeting_words
         
-        # Check if message is a meaningful workplace question (must have workplace keywords AND be long enough)
-        workplace_keywords = ['manager', 'boss', 'colleague', 'coworker', 'team', 'work', 'office', 'job', 'project', 'meeting', 'deadline', 'leave', 'promotion', 'salary', 'raise', 'increment', 'feedback', 'review', 'client', 'task', 'help', 'problem', 'issue', 'stress', 'conflict', 'peer', 'employee', 'supervisor', 'department', 'company', 'workplace', 'career', 'resign', 'quit', 'fired', 'hire', 'interview', 'performance']
+        # Check if message is meaningful (not just 1-2 random words)
         word_count = len(user_message.split())
-        has_workplace_context = any(keyword in user_message.lower() for keyword in workplace_keywords)
-        # MUST have workplace keyword AND at least 5 words to be meaningful
-        is_meaningful_query = has_workplace_context and word_count >= 5
+        is_meaningful_query = word_count >= 3  # Any message with 3+ words is considered real
         
-        # If no tone selected and this is a meaningful workplace query, ask for tone FIRST
+        # If no tone selected and this is a real problem (not greeting), ask for tone FIRST
         if selected_tone is None and not is_greeting and is_meaningful_query:
             ai_response = "Before I help you with this, how would you like me to respond?"
             
@@ -389,9 +396,9 @@ def chat():
                 'success': True
             })
         
-        # If it's not a meaningful query and no tone, just respond naturally
+        # If it's just 1-2 random words (not meaningful), ask them to elaborate
         if selected_tone is None and not is_greeting and not is_meaningful_query:
-            ai_response = "I'm here to help with workplace challenges like communication issues, conflicts, career growth, or team dynamics. What's on your mind?"
+            ai_response = "Could you tell me a bit more about what's going on?"
             
             if 'chat_history' not in session:
                 session['chat_history'] = []
@@ -441,20 +448,10 @@ def chat():
             session.modified = True
             logger.info(f"✅ Tone '{original_user_message.strip()}' saved to session")
         
-        # Never show buttons after safety warnings
+        # Never show buttons after safety warnings or if tone already selected
         if is_safety_warning:
             quick_replies = []
             logger.info("⚠️ Safety warning - no buttons")
-        
-        # Show tone selection after user describes a real problem (check ORIGINAL message)
-        elif not has_selected_tone and chat_length >= 2:
-            # Check if this is NOT a greeting and NOT a tone selection
-            greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'professional', 'casual']
-            if original_user_message.lower().strip() not in greeting_words:
-                # User shared a real problem - ask for tone preference
-                ai_response = ai_response + "<br><br>Before we continue, how would you like me to respond? Pick your preferred tone:"
-                quick_replies = ["Professional", "Casual"]
-                logger.info(f"🎯 Chat #{chat_length}: Asking for tone after real query")
         
         return jsonify({
             'response': ai_response,
