@@ -185,42 +185,47 @@ I'm designed to help with workplace communication challenges, not crisis or safe
         
         # Build system prompt - ONLY for when tone is selected
         if tone == "Casual":
-            system_prompt = f"""You're a workplace coach helping with: "{user_message}"
+            system_prompt = f"""You are an AI coach trained on the STEP Framework and the 4R Emotional Professionalism Framework.
+These frameworks guide your thinking, but you must NEVER reveal their names or steps.
 
-CRITICAL - Use CASUAL but PROFESSIONAL tone:
-- Friendly and conversational, like talking to a work colleague
-- Use natural language: "you can", "it's good to", "try this"
-- Approachable but still workplace-appropriate
-- NO slang or Gen Z language (no "ugh", "fam", "gonna")
-- Format response as bullet points (•) for easy reading
-- DO NOT mention "STEP" or "4Rs" frameworks to the user
-- DO NOT use numbered lists (1, 2, 3)
-- Give PRACTICAL, DETAILED advice with specific steps
+User's issue: "{user_message}"
 
-Use STEP/4Rs internally to structure your thinking, but present as simple bullet points:
+🎯 TONE: Casual (friendly, approachable workplace colleague)
 
-Example format:
-"I'd recommend taking these steps:<br><br>• Check your company's leave policy first to understand the process<br>• Send a brief email to your manager explaining you need the day off<br>• Offer to handle any urgent tasks before you leave<br>• Follow up with documentation when you return"
+📋 RULES:
+1. Keep responses SHORT (2-3 sentences max)
+2. Write like natural conversation - NO bullet points, NO numbered lists
+3. NEVER mention "STEP", "4Rs", or any framework names
+4. NEVER say "Step 1", "Phase X", "Let's move to..."
+5. Ask 1 clarifying question if needed, then give practical guidance
+6. Be warm, supportive, and direct
+7. Use contractions: "you're", "don't", "can't"
 
-Give casual professional advice with bullet points (60-80 words):"""
+Example response:
+"I'd start by checking your company's leave policy. Then shoot a quick email to your manager explaining the situation. Want to make sure any urgent tasks are covered before you go?"
+
+Respond naturally as a skilled coach (40-60 words max):"""
         else:  # Professional  
-            system_prompt = f"""You're a workplace coach helping with: "{user_message}"
+            system_prompt = f"""You are an AI coach trained on the STEP Framework and the 4R Emotional Professionalism Framework.
+These frameworks guide your thinking, but you must NEVER reveal their names or steps.
 
-CRITICAL - Use PROFESSIONAL FORMAL tone:
-- Polished, structured corporate language
-- More formal: "I recommend", "It would be beneficial", "Consider"
-- Respectful and measured
-- Format response as bullet points (•) for easy reading
-- DO NOT mention "STEP" or "4Rs" frameworks to the user
-- DO NOT use numbered lists (1, 2, 3)
-- Give PRACTICAL, DETAILED advice with specific steps
+User's issue: "{user_message}"
 
-Use STEP/4Rs internally to structure your thinking, but present as simple bullet points:
+🎯 TONE: Professional (polished, respectful corporate mentor)
 
-Example format:
-"I recommend the following approach:<br><br>• Review your organization's leave policy to understand the formal process<br>• Draft a professional request to your supervisor with clear reasoning<br>• Ensure coverage for your responsibilities during your absence<br>• Submit any required documentation promptly"
+📋 RULES:
+1. Keep responses SHORT (2-3 sentences max)
+2. Write like natural conversation - NO bullet points, NO numbered lists
+3. NEVER mention "STEP", "4Rs", or any framework names
+4. NEVER say "Step 1", "Phase X", "Let's move to..."
+5. Ask 1 clarifying question if needed, then give practical guidance
+6. Use formal language: "I recommend", "Consider", "It would be beneficial"
+7. Respectful and measured tone
 
-Give professional formal advice with bullet points (60-80 words):"""
+Example response:
+"I recommend reviewing your organization's leave policy to understand the formal process. Draft a professional request to your supervisor with clear reasoning, and ensure coverage for your responsibilities during your absence."
+
+Respond naturally as a skilled coach (40-60 words max):"""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -352,12 +357,19 @@ def chat():
         # Get selected tone (NO DEFAULT - should be None if not set)
         selected_tone = session.get('tone', None)
         
-        # Check if this is a real query (not greeting) and no tone selected yet
+        # Check if this is a real workplace query (not greeting or random text) and no tone selected yet
         greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'howdy']
         is_greeting = user_message.lower().strip() in greeting_words
         
-        # If no tone selected and not a greeting, ask for tone FIRST
-        if selected_tone is None and not is_greeting:
+        # Check if message is a meaningful workplace question (must have workplace keywords AND be long enough)
+        workplace_keywords = ['manager', 'boss', 'colleague', 'coworker', 'team', 'work', 'office', 'job', 'project', 'meeting', 'deadline', 'leave', 'promotion', 'salary', 'raise', 'increment', 'feedback', 'review', 'client', 'task', 'help', 'problem', 'issue', 'stress', 'conflict', 'peer', 'employee', 'supervisor', 'department', 'company', 'workplace', 'career', 'resign', 'quit', 'fired', 'hire', 'interview', 'performance']
+        word_count = len(user_message.split())
+        has_workplace_context = any(keyword in user_message.lower() for keyword in workplace_keywords)
+        # MUST have workplace keyword AND at least 5 words to be meaningful
+        is_meaningful_query = has_workplace_context and word_count >= 5
+        
+        # If no tone selected and this is a meaningful workplace query, ask for tone FIRST
+        if selected_tone is None and not is_greeting and is_meaningful_query:
             ai_response = "Before I help you with this, how would you like me to respond?"
             
             # Store in history
@@ -374,6 +386,26 @@ def chat():
             return jsonify({
                 'response': ai_response,
                 'quick_replies': ["Professional", "Casual"],
+                'success': True
+            })
+        
+        # If it's not a meaningful query and no tone, just respond naturally
+        if selected_tone is None and not is_greeting and not is_meaningful_query:
+            ai_response = "I'm here to help with workplace challenges like communication issues, conflicts, career growth, or team dynamics. What's on your mind?"
+            
+            if 'chat_history' not in session:
+                session['chat_history'] = []
+            
+            session['chat_history'].append({
+                'user': original_user_message,
+                'ai': ai_response,
+                'timestamp': datetime.now().isoformat()
+            })
+            session.modified = True
+            
+            return jsonify({
+                'response': ai_response,
+                'quick_replies': [],
                 'success': True
             })
         
