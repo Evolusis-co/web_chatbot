@@ -391,9 +391,18 @@ def index():
         session['chat_history'] = []
     return render_template('index.html')
 
-@app.route('/api/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST', 'OPTIONS'])
 def chat():
     """Handle chat messages"""
+    # Handle preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+    
     try:
         data = request.get_json()
         user_message = data.get('message', '').strip()
@@ -403,6 +412,15 @@ def chat():
             return jsonify({'error': 'Message cannot be empty'}), 400
         
         logger.info(f"📨 User: {user_message}")
+        logger.info(f"🔍 Session ID: {session.get('_id', 'NO SESSION')}")
+        logger.info(f"🔍 Has chat_history: {'chat_history' in session}")
+        logger.info(f"🔍 Has tone: {'tone' in session}")
+        
+        # Initialize session if not exists
+        if 'chat_history' not in session:
+            session['chat_history'] = []
+            session.modified = True
+            logger.info("✅ Initialized new session")
         
         # Check if services are initialized
         if not qdrant_client or not openai_client:
@@ -538,11 +556,17 @@ def chat():
             quick_replies = []
             logger.info("⚠️ Safety warning - no buttons")
         
-        return jsonify({
+        response_data = jsonify({
             'response': ai_response,
             'quick_replies': quick_replies,
             'success': True
         })
+        
+        # Ensure cookies are set in response
+        response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response_data.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return response_data
         
     except Exception as e:
         logger.error(f"❌ Error in chat endpoint: {str(e)}")
@@ -551,21 +575,53 @@ def chat():
             'success': False
         }), 500
 
-@app.route('/api/history', methods=['GET'])
+@app.route('/api/history', methods=['GET', 'OPTIONS'])
 def get_history():
     """Get chat history"""
+    # Handle preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+    
+    logger.info(f"🔍 History request - Session ID: {session.get('_id', 'NO SESSION')}")
+    logger.info(f"🔍 Chat history length: {len(session.get('chat_history', []))}")
+    
     history = session.get('chat_history', [])
-    return jsonify({'history': history})
+    response_data = jsonify({'history': history})
+    
+    # Ensure cookies are set in response
+    response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+    response_data.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    return response_data
 
-@app.route('/api/clear', methods=['POST'])
+@app.route('/api/clear', methods=['POST', 'OPTIONS'])
 def clear_history():
     """Clear chat history and reset tone preference"""
+    # Handle preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+    
     session['chat_history'] = []
     # Also clear the tone preference so user gets asked again
     if 'tone' in session:
         del session['tone']
     session.modified = True
-    return jsonify({'success': True, 'message': 'Chat history cleared'})
+    
+    response_data = jsonify({'success': True, 'message': 'Chat history cleared'})
+    response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+    response_data.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    return response_data
 
 @app.route('/health')
 def health():
@@ -577,6 +633,23 @@ def health():
         'model': 'gpt-4o-mini',
         'embeddings': 'text-embedding-3-small',
         'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/session-check')
+def session_check():
+    """Debug endpoint to check session status"""
+    return jsonify({
+        'session_exists': bool(session),
+        'has_chat_history': 'chat_history' in session,
+        'chat_length': len(session.get('chat_history', [])),
+        'has_tone': 'tone' in session,
+        'tone': session.get('tone', None),
+        'session_id': session.get('_id', 'NO_SESSION'),
+        'cookie_config': {
+            'samesite': app.config.get('SESSION_COOKIE_SAMESITE'),
+            'secure': app.config.get('SESSION_COOKIE_SECURE'),
+            'httponly': app.config.get('SESSION_COOKIE_HTTPONLY')
+        }
     })
 
 if __name__ == '__main__':
