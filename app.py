@@ -1,15 +1,17 @@
 """
 Simple Web Chatbot - Uses Qdrant for context retrieval with OpenAI embeddings
+Token-based authentication for cross-browser compatibility
 """
 
 import os
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from openai import OpenAI
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+import jwt
 
 # Load environment variables (don't override existing ones from Render)
 load_dotenv(override=False)
@@ -25,12 +27,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")
 
-# Fix cross-site cookie issues for Chrome, Safari, Edge
-app.config.update(
-    SESSION_COOKIE_SAMESITE="None",  # Allow cookies on cross-domain requests
-    SESSION_COOKIE_SECURE=True,      # Required when SameSite=None (HTTPS only)
-    SESSION_COOKIE_HTTPONLY=True,    # Prevent XSS attacks
-)
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET_KEY", app.secret_key)
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24  # Token valid for 24 hours
 
 # Configure CORS for specific origins from environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
@@ -74,6 +74,48 @@ def initialize_services():
     except Exception as e:
         logger.error(f"❌ Failed to initialize services: {str(e)}")
         return False
+
+# ============================================================================
+# JWT Token Functions
+# ============================================================================
+
+def create_token(chat_history: list = None, tone: str = None) -> str:
+    """Create a new JWT token with chat session data"""
+    payload = {
+        'chat_history': chat_history or [],
+        'tone': tone,
+        'created_at': datetime.utcnow().isoformat(),
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return token
+
+def decode_token(token: str) -> dict:
+    """Decode and validate JWT token, return session data"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return {
+            'chat_history': payload.get('chat_history', []),
+            'tone': payload.get('tone'),
+            'valid': True
+        }
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return {'chat_history': [], 'tone': None, 'valid': False, 'error': 'Token expired'}
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid token: {str(e)}")
+        return {'chat_history': [], 'tone': None, 'valid': False, 'error': 'Invalid token'}
+
+def get_token_from_request() -> str:
+    """Extract token from Authorization header or request body"""
+    # Try Authorization header first
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:]
+    
+    # Fallback to request body
+    data = request.get_json() or {}
+    return data.get('token', '')
 
 def get_relevant_context(user_message: str, top_k: int = 3) -> str:
     """Retrieve relevant context from Qdrant using OpenAI embeddings"""
@@ -386,20 +428,17 @@ initialize_services()
 @app.route('/')
 def index():
     """Main chat interface"""
-    # Initialize session chat history
-    if 'chat_history' not in session:
-        session['chat_history'] = []
     return render_template('index.html')
 
 @app.route('/api/chat', methods=['POST', 'OPTIONS'])
 def chat():
-    """Handle chat messages"""
+    """Handle chat messages with JWT token-based sessions"""
     # Handle preflight request
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
     
@@ -407,20 +446,24 @@ def chat():
         data = request.get_json()
         user_message = data.get('message', '').strip()
         original_user_message = user_message  # Save original before any modifications
+        incoming_token = data.get('token', '')
         
         if not user_message:
             return jsonify({'error': 'Message cannot be empty'}), 400
         
         logger.info(f"📨 User: {user_message}")
-        logger.info(f"🔍 Session ID: {session.get('_id', 'NO SESSION')}")
-        logger.info(f"🔍 Has chat_history: {'chat_history' in session}")
-        logger.info(f"🔍 Has tone: {'tone' in session}")
+        logger.info(f"🔍 Token received: {'Yes' if incoming_token else 'No (new session)'}")
         
-        # Initialize session if not exists
-        if 'chat_history' not in session:
-            session['chat_history'] = []
-            session.modified = True
-            logger.info("✅ Initialized new session")
+        # Decode existing token or create new session
+        if incoming_token:
+            session_data = decode_token(incoming_token)
+            history = session_data['chat_history']
+            selected_tone = session_data['tone']
+            logger.info(f"✅ Decoded token - History length: {len(history)}, Tone: {selected_tone}")
+        else:
+            history = []
+            selected_tone = None
+            logger.info("✅ New session - No token provided")
         
         # Check if services are initialized
         if not qdrant_client or not openai_client:
@@ -429,30 +472,27 @@ def chat():
                 return jsonify({'error': 'Services unavailable. Please try again later.', 'success': False}), 503
         
         # Check message limit (10 messages = 5 exchanges)
-        current_count = len(session.get('chat_history', []))
+        current_count = len(history)
         if current_count >= 10:
+            new_token = create_token(history, selected_tone)
             return jsonify({
                 'response': "You've reached the free message limit (10 messages). Upgrade to Premium for unlimited conversations! 🚀",
                 'limit_reached': True,
                 'quick_replies': [],
+                'token': new_token,
                 'success': True
             })
         
         # Get relevant context from Qdrant using OpenAI embeddings
         context = get_relevant_context(user_message)
         
-        # Get chat history for context - Include MORE history (last 4 exchanges instead of 2)
-        history = session.get('chat_history', [])
-        chat_history = "\n".join([f"User: {h['user']}\nAI: {h['ai']}" for h in history[-4:]])  # Last 4 exchanges for better context
+        # Build chat history string for context (last 4 exchanges)
+        chat_history = "\n".join([f"User: {h['user']}\nAI: {h['ai']}" for h in history[-4:]])
         
-        # HANDLE TONE SELECTION FIRST
+        # HANDLE TONE SELECTION
         if user_message.strip() in ["Professional", "Casual"]:
             selected_tone = user_message.strip()
-            
-            # Save the selected tone
-            session['tone'] = selected_tone
-            session.modified = True
-            logger.info(f"✅ Tone '{selected_tone}' saved to session")
+            logger.info(f"✅ Tone '{selected_tone}' selected")
             
             # Get the user's problem from chat history
             user_messages = []
@@ -465,10 +505,7 @@ def chat():
             # If we found their problem, REPLACE user_message with it
             if user_messages:
                 user_message = user_messages[-1]  # Get the most recent problem statement
-                logger.info(f"🔄 Tone selected: {selected_tone}. Responding to original problem: {user_message[:50]}...")
-        
-        # Get selected tone (NO DEFAULT - should be None if not set)
-        selected_tone = session.get('tone', None)
+                logger.info(f"🔄 Responding to original problem: {user_message[:50]}...")
         
         # Check if this is a greeting (not a real problem)
         greeting_words = ['hi', 'hello', 'hey', 'hii', 'hiii', 'sup', 'yo', 'howdy']
@@ -482,20 +519,20 @@ def chat():
         if selected_tone is None and not is_greeting and is_meaningful_query:
             ai_response = "Before I help you with this, how would you like me to respond?"
             
-            # Store in history
-            if 'chat_history' not in session:
-                session['chat_history'] = []
-            
-            session['chat_history'].append({
+            # Add to history
+            history.append({
                 'user': original_user_message,
                 'ai': ai_response,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.utcnow().isoformat()
             })
-            session.modified = True
+            
+            # Create new token with updated history
+            new_token = create_token(history, selected_tone)
             
             return jsonify({
                 'response': ai_response,
                 'quick_replies': ["Professional", "Casual"],
+                'token': new_token,
                 'success': True
             })
         
@@ -503,66 +540,59 @@ def chat():
         if selected_tone is None and not is_greeting and not is_meaningful_query:
             ai_response = "Could you tell me a bit more about what's going on?"
             
-            if 'chat_history' not in session:
-                session['chat_history'] = []
-            
-            session['chat_history'].append({
+            # Add to history
+            history.append({
                 'user': original_user_message,
                 'ai': ai_response,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.utcnow().isoformat()
             })
-            session.modified = True
+            
+            # Create new token
+            new_token = create_token(history, selected_tone)
             
             return jsonify({
                 'response': ai_response,
                 'quick_replies': [],
+                'token': new_token,
                 'success': True
             })
         
-        # Calculate chat length BEFORE adding current message (for tone question detection)
+        # Calculate chat length BEFORE adding current message
         current_chat_length = len(history) + 1
         
         # Generate response using GPT-4o-mini with Qdrant context
         ai_response = generate_response(user_message, context, chat_history, selected_tone, current_chat_length)
         
-        # Store in session history (use ORIGINAL message if tone was selected)
-        if 'chat_history' not in session:
-            session['chat_history'] = []
-        
-        session['chat_history'].append({
-            'user': original_user_message,  # Store "Casual" or "Professional", not the replaced problem
+        # Add to history (use ORIGINAL message if tone was selected)
+        history.append({
+            'user': original_user_message,
             'ai': ai_response,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.utcnow().isoformat()
         })
-        session.modified = True
         
         logger.info(f"✅ AI: {ai_response[:100]}...")
         
         # Smart quick reply flow
         is_safety_warning = ai_response.startswith("⚠️") or "call 911" in ai_response.lower()
-        has_selected_tone = 'tone' in session and session['tone'] in ["Professional", "Casual"]
-        chat_length = len(session.get('chat_history', []))
         
         quick_replies = []
         
-        # Store tone if user just selected it (check ORIGINAL message)
-        if original_user_message.strip() in ["Professional", "Casual"]:
-            session['tone'] = original_user_message.strip()
-            session.modified = True
-            logger.info(f"✅ Tone '{original_user_message.strip()}' saved to session")
-        
-        # Never show buttons after safety warnings or if tone already selected
+        # Never show buttons after safety warnings
         if is_safety_warning:
             quick_replies = []
             logger.info("⚠️ Safety warning - no buttons")
         
+        # Create new token with updated history and tone
+        new_token = create_token(history, selected_tone)
+        
         response_data = jsonify({
             'response': ai_response,
             'quick_replies': quick_replies,
+            'token': new_token,
             'success': True
         })
         
-        # Ensure cookies are set in response
+        # CORS headers
         response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
         response_data.headers['Access-Control-Allow-Credentials'] = 'true'
         
@@ -577,23 +607,34 @@ def chat():
 
 @app.route('/api/history', methods=['GET', 'OPTIONS'])
 def get_history():
-    """Get chat history"""
+    """Get chat history from JWT token"""
     # Handle preflight request
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
         response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
     
-    logger.info(f"🔍 History request - Session ID: {session.get('_id', 'NO SESSION')}")
-    logger.info(f"🔍 Chat history length: {len(session.get('chat_history', []))}")
+    # Get token from Authorization header or query param
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        token = request.args.get('token', '')
     
-    history = session.get('chat_history', [])
+    if not token:
+        logger.info("🔍 No token provided - returning empty history")
+        return jsonify({'history': []})
+    
+    # Decode token
+    session_data = decode_token(token)
+    history = session_data['chat_history']
+    
+    logger.info(f"🔍 History request - Token valid: {session_data.get('valid', False)}, History length: {len(history)}")
+    
     response_data = jsonify({'history': history})
     
-    # Ensure cookies are set in response
+    # CORS headers
     response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
     response_data.headers['Access-Control-Allow-Credentials'] = 'true'
     
@@ -601,23 +642,24 @@ def get_history():
 
 @app.route('/api/clear', methods=['POST', 'OPTIONS'])
 def clear_history():
-    """Clear chat history and reset tone preference"""
+    """Clear chat history - return new empty token"""
     # Handle preflight request
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
     
-    session['chat_history'] = []
-    # Also clear the tone preference so user gets asked again
-    if 'tone' in session:
-        del session['tone']
-    session.modified = True
+    # Create new empty token
+    new_token = create_token([], None)
     
-    response_data = jsonify({'success': True, 'message': 'Chat history cleared'})
+    response_data = jsonify({
+        'success': True,
+        'message': 'Chat history cleared',
+        'token': new_token
+    })
     response_data.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
     response_data.headers['Access-Control-Allow-Credentials'] = 'true'
     
@@ -637,18 +679,36 @@ def health():
 
 @app.route('/api/session-check')
 def session_check():
-    """Debug endpoint to check session status"""
+    """Debug endpoint to check JWT token status"""
+    # Get token from header or query
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        token = request.args.get('token', '')
+    
+    if not token:
+        return jsonify({
+            'has_token': False,
+            'message': 'No token provided',
+            'jwt_config': {
+                'algorithm': JWT_ALGORITHM,
+                'expiration_hours': JWT_EXPIRATION_HOURS
+            }
+        })
+    
+    # Decode token
+    session_data = decode_token(token)
+    
     return jsonify({
-        'session_exists': bool(session),
-        'has_chat_history': 'chat_history' in session,
-        'chat_length': len(session.get('chat_history', [])),
-        'has_tone': 'tone' in session,
-        'tone': session.get('tone', None),
-        'session_id': session.get('_id', 'NO_SESSION'),
-        'cookie_config': {
-            'samesite': app.config.get('SESSION_COOKIE_SAMESITE'),
-            'secure': app.config.get('SESSION_COOKIE_SECURE'),
-            'httponly': app.config.get('SESSION_COOKIE_HTTPONLY')
+        'has_token': True,
+        'token_valid': session_data.get('valid', False),
+        'has_chat_history': len(session_data['chat_history']) > 0,
+        'chat_length': len(session_data['chat_history']),
+        'has_tone': session_data['tone'] is not None,
+        'tone': session_data['tone'],
+        'error': session_data.get('error'),
+        'jwt_config': {
+            'algorithm': JWT_ALGORITHM,
+            'expiration_hours': JWT_EXPIRATION_HOURS
         }
     })
 

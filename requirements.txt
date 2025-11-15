@@ -3,6 +3,9 @@ Flask==3.0.0
 Flask-Cors==4.0.0
 gunicorn==21.2.0
 
+# Authentication
+PyJWT==2.8.0
+
 # Environment & Configuration
 python-dotenv==1.0.0
 
